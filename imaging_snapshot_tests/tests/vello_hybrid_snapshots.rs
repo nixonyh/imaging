@@ -5,8 +5,13 @@
 
 #![cfg(feature = "vello_hybrid")]
 
+use std::sync::Arc;
+
+use imaging::Painter;
 use imaging_snapshot_tests::cases::{DEFAULT_HEIGHT, DEFAULT_WIDTH, build_scene};
-use imaging_vello_hybrid::VelloHybridRenderer;
+use imaging_vello_hybrid::{VelloHybridRenderer, VelloHybridSceneSink};
+use kurbo::Rect;
+use peniko::{Blob, Brush, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
 
 mod common;
 
@@ -39,4 +44,38 @@ fn snapshots() {
         &mut errors,
     );
     common::assert_no_snapshot_errors(errors);
+}
+
+#[test]
+fn native_scene_sink_supports_image_brushes_with_renderer() {
+    let Some(mut renderer) =
+        common::try_init_or_skip("vello_hybrid", || VelloHybridRenderer::try_new(32, 32))
+    else {
+        return;
+    };
+
+    let mut scene = vello_hybrid::Scene::new(32, 32);
+    scene.reset();
+    {
+        let brush = Brush::Image(ImageBrush::new(ImageData {
+            data: Blob::new(Arc::new([
+                0xff, 0x20, 0x20, 0xff, 0x20, 0xff, 0x20, 0xff, 0x20, 0x20, 0xff, 0xff, 0xff, 0xff,
+                0x20, 0xff,
+            ])),
+            format: ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width: 2,
+            height: 2,
+        }));
+        let mut sink = VelloHybridSceneSink::with_renderer(&mut scene, &mut renderer);
+        let mut painter = Painter::new(&mut sink);
+        painter.fill_rect(Rect::new(0.0, 0.0, 32.0, 32.0), &brush);
+        sink.finish().expect("finish native scene sink");
+    }
+
+    let bytes = renderer
+        .render_vello_hybrid_scene_rgba8(&scene)
+        .expect("render native hybrid scene");
+    assert_eq!(bytes.len(), 32 * 32 * 4);
+    assert!(bytes.iter().any(|&channel| channel != 0));
 }

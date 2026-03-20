@@ -7,10 +7,6 @@ use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use vello_common::paint::{Image as VelloImage, ImageId, ImageSource};
 
-pub(crate) trait ImageBrushResolver {
-    fn resolve_image_brush(&mut self, brush: &ImageBrush) -> Result<VelloImage, Error>;
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct HybridImageRegistry {
     live: HashMap<ImageKey, ImageId>,
@@ -21,19 +17,20 @@ impl HybridImageRegistry {
         Self::default()
     }
 
-    pub(crate) fn resolver<'a>(
+    pub(crate) fn begin_upload_session<'a>(
         &'a mut self,
         renderer: &'a mut vello_hybrid::Renderer,
         device: &'a wgpu::Device,
         queue: &'a wgpu::Queue,
-        encoder: &'a mut wgpu::CommandEncoder,
-    ) -> HybridImageResolver<'a> {
-        HybridImageResolver {
+        encoder: wgpu::CommandEncoder,
+    ) -> HybridImageUploadSession<'a> {
+        HybridImageUploadSession {
             registry: self,
             renderer,
             device,
             queue,
-            encoder,
+            encoder: Some(encoder),
+            pending: HashMap::new(),
         }
     }
 
@@ -50,18 +47,21 @@ impl HybridImageRegistry {
     }
 }
 
-pub(crate) struct HybridImageResolver<'a> {
+pub(crate) struct HybridImageUploadSession<'a> {
     registry: &'a mut HybridImageRegistry,
     renderer: &'a mut vello_hybrid::Renderer,
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
-    encoder: &'a mut wgpu::CommandEncoder,
+    encoder: Option<wgpu::CommandEncoder>,
+    pending: HashMap<ImageKey, ImageId>,
 }
 
-impl ImageBrushResolver for HybridImageResolver<'_> {
-    fn resolve_image_brush(&mut self, brush: &ImageBrush) -> Result<VelloImage, Error> {
+impl HybridImageUploadSession<'_> {
+    pub(crate) fn resolve_image_brush(&mut self, brush: &ImageBrush) -> Result<VelloImage, Error> {
         let key = ImageKey::derive(&brush.image);
-        let image_id = if let Some(image_id) = self.registry.live.get(&key).copied() {
+        let image_id = if let Some(image_id) = self.pending.get(&key).copied() {
+            image_id
+        } else if let Some(image_id) = self.registry.live.get(&key).copied() {
             image_id
         } else {
             let image_source = ImageSource::from_peniko_image_data(&brush.image);
@@ -70,10 +70,15 @@ impl ImageBrushResolver for HybridImageResolver<'_> {
                     "peniko image conversion did not produce a pixmap",
                 ));
             };
-            let image_id =
-                self.renderer
-                    .upload_image(self.device, self.queue, self.encoder, &pixmap);
-            self.registry.live.insert(key, image_id);
+            let image_id = self.renderer.upload_image(
+                self.device,
+                self.queue,
+                self.encoder
+                    .as_mut()
+                    .expect("hybrid image upload session should own an encoder"),
+                &pixmap,
+            );
+            self.pending.insert(key, image_id);
             image_id
         };
 
@@ -81,6 +86,27 @@ impl ImageBrushResolver for HybridImageResolver<'_> {
             image: ImageSource::OpaqueId(image_id),
             sampler: brush.sampler,
         })
+    }
+
+    pub(crate) fn finish(&mut self, success: bool) {
+        if success {
+            self.registry.live.extend(self.pending.drain());
+        } else {
+            for image_id in self.pending.drain().map(|(_, image_id)| image_id) {
+                self.renderer.destroy_image(
+                    self.device,
+                    self.queue,
+                    self.encoder
+                        .as_mut()
+                        .expect("hybrid image upload session should own an encoder"),
+                    image_id,
+                );
+            }
+        }
+
+        if let Some(encoder) = self.encoder.take() {
+            self.queue.submit([encoder.finish()]);
+        }
     }
 }
 

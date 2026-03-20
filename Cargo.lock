@@ -661,6 +661,7 @@ dependencies = [
  "kurbo",
  "peniko",
  "skrifa",
+ "vello_hybrid",
 ]
 
 [[package]]

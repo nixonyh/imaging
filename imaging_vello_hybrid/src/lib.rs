@@ -8,9 +8,9 @@
 //! `wgpu`.
 //!
 //! Recorded scenes with inline image brushes are uploaded through a renderer-scoped image registry
-//! and translated to backend-managed opaque image ids. Direct use of [`VelloHybridSceneSink::new`]
-//! still only supports solid and gradient brushes because it does not have access to the renderer
-//! upload path.
+//! and translated to backend-managed opaque image ids. Use [`VelloHybridSceneSink::with_renderer`]
+//! when recording directly into a native [`vello_hybrid::Scene`] and you want the same image
+//! support.
 //!
 //! # Render A Recorded Scene
 //!
@@ -66,6 +66,8 @@
 //! }
 //! ```
 //!
+//! Use [`VelloHybridSceneSink::with_renderer`] instead when the scene uses image brushes.
+//!
 //! # Render A Native `vello_hybrid::Scene`
 //!
 //! If you already have a native hybrid scene, hand it directly to [`VelloHybridRenderer`].
@@ -101,7 +103,7 @@
 mod image_registry;
 mod scene_sink;
 
-use image_registry::HybridImageRegistry;
+use image_registry::{HybridImageRegistry, HybridImageUploadSession};
 use imaging::record::{Scene, ValidateError, replay};
 use std::sync::mpsc;
 use vello_hybrid::{RenderError, RenderSize, RenderTargetConfig};
@@ -192,6 +194,21 @@ impl VelloHybridRenderer {
         self.tolerance = tolerance;
     }
 
+    pub(crate) fn begin_image_upload_session(
+        &mut self,
+        label: &'static str,
+    ) -> HybridImageUploadSession<'_> {
+        let encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
+        self.image_registry.begin_upload_session(
+            &mut self.renderer,
+            &self.device,
+            &self.queue,
+            encoder,
+        )
+    }
+
     /// Destroy all uploaded hybrid image resources cached by this renderer.
     pub fn clear_cached_images(&mut self) {
         let mut encoder = self
@@ -212,25 +229,13 @@ impl VelloHybridRenderer {
         scene.validate().map_err(Error::InvalidScene)?;
         let mut native = vello_hybrid::Scene::new(self.width, self.height);
         native.reset();
-        let mut upload_encoder = self
-            .device
-            .create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("imaging_vello_hybrid upload images"),
-            });
+        let tolerance = self.tolerance;
         {
-            let mut image_resolver = self.image_registry.resolver(
-                &mut self.renderer,
-                &self.device,
-                &self.queue,
-                &mut upload_encoder,
-            );
-            let mut sink =
-                VelloHybridSceneSink::with_image_resolver(&mut native, &mut image_resolver);
-            sink.set_tolerance(self.tolerance);
+            let mut sink = VelloHybridSceneSink::with_renderer(&mut native, self);
+            sink.set_tolerance(tolerance);
             replay(scene, &mut sink);
             sink.finish()?;
         }
-        self.queue.submit([upload_encoder.finish()]);
         self.render_vello_hybrid_scene_rgba8(&native)
     }
 

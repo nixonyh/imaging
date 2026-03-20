@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use super::Error;
-use crate::image_registry::ImageBrushResolver;
+use crate::{VelloHybridRenderer, image_registry::HybridImageUploadSession};
 use imaging::{
     BlurredRoundedRect, ClipRef, Composite, FillRef, GeometryRef, GlyphRunRef, GroupRef, PaintSink,
     StrokeRef,
@@ -14,7 +14,7 @@ use vello_common::glyph::Glyph as VelloGlyph;
 /// Borrowed adapter that streams `imaging` commands into an existing [`vello_hybrid::Scene`].
 pub struct VelloHybridSceneSink<'a> {
     scene: &'a mut vello_hybrid::Scene,
-    image_resolver: Option<&'a mut dyn ImageBrushResolver>,
+    image_upload: Option<HybridImageUploadSession<'a>>,
     tolerance: f64,
     error: Option<Error>,
     clip_depth: u32,
@@ -37,7 +37,7 @@ impl<'a> VelloHybridSceneSink<'a> {
     pub fn new(scene: &'a mut vello_hybrid::Scene) -> Self {
         Self {
             scene,
-            image_resolver: None,
+            image_upload: None,
             tolerance: 0.1,
             error: None,
             clip_depth: 0,
@@ -45,13 +45,20 @@ impl<'a> VelloHybridSceneSink<'a> {
         }
     }
 
-    pub(crate) fn with_image_resolver(
+    /// Wrap an existing [`vello_hybrid::Scene`] and use `renderer` to upload image brushes on
+    /// demand.
+    ///
+    /// This is the native-scene path for image brushes. Uploaded images are cached on the
+    /// renderer and reused across subsequent recordings and renders.
+    pub fn with_renderer(
         scene: &'a mut vello_hybrid::Scene,
-        image_resolver: &'a mut dyn ImageBrushResolver,
+        renderer: &'a mut VelloHybridRenderer,
     ) -> Self {
         Self {
             scene,
-            image_resolver: Some(image_resolver),
+            image_upload: Some(
+                renderer.begin_image_upload_session("imaging_vello_hybrid scene upload images"),
+            ),
             tolerance: 0.1,
             error: None,
             clip_depth: 0,
@@ -66,16 +73,21 @@ impl<'a> VelloHybridSceneSink<'a> {
 
     /// Return the first deferred translation error, if any, and ensure clip/group stacks are balanced.
     pub fn finish(&mut self) -> Result<(), Error> {
-        if let Some(err) = self.error.take() {
-            return Err(err);
+        let result = if let Some(err) = self.error.take() {
+            Err(err)
+        } else if self.clip_depth != 0 {
+            Err(Error::Internal("unbalanced clip stack"))
+        } else if self.group_depth != 0 {
+            Err(Error::Internal("unbalanced group stack"))
+        } else {
+            Ok(())
+        };
+
+        if let Some(mut image_upload) = self.image_upload.take() {
+            image_upload.finish(result.is_ok());
         }
-        if self.clip_depth != 0 {
-            return Err(Error::Internal("unbalanced clip stack"));
-        }
-        if self.group_depth != 0 {
-            return Err(Error::Internal("unbalanced group stack"));
-        }
-        Ok(())
+
+        result
     }
 
     fn set_error_once(&mut self, err: Error) {
@@ -98,11 +110,11 @@ impl<'a> VelloHybridSceneSink<'a> {
     }
 
     fn resolve_image_brush(&mut self, image: &ImageBrush) -> Option<vello_common::paint::Image> {
-        let Some(image_resolver) = self.image_resolver.as_deref_mut() else {
+        let Some(image_upload) = self.image_upload.as_mut() else {
             self.set_error_once(Error::UnsupportedImageBrush);
             return None;
         };
-        match image_resolver.resolve_image_brush(image) {
+        match image_upload.resolve_image_brush(image) {
             Ok(image) => Some(image),
             Err(err) => {
                 self.set_error_once(err);

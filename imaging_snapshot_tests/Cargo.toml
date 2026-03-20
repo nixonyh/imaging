@@ -18,6 +18,7 @@ imaging_skia = { path = "../imaging_skia", optional = true }
 imaging_vello = { path = "../imaging_vello", optional = true }
 imaging_vello_cpu = { path = "../imaging_vello_cpu", optional = true }
 imaging_vello_hybrid = { path = "../imaging_vello_hybrid", optional = true }
+vello_hybrid = { version = "0.0.6", default-features = true, optional = true }
 
 [lints]
 workspace = true
@@ -29,5 +30,5 @@ kompari = { git = "https://github.com/linebender/kompari.git", rev = "4b851413e1
 default = []
 vello_cpu = ["dep:imaging_vello_cpu"]
 skia = ["dep:imaging_skia"]
-vello_hybrid = ["dep:imaging_vello_hybrid"]
+vello_hybrid = ["dep:imaging_vello_hybrid", "dep:vello_hybrid"]
 vello = ["dep:imaging_vello"]
