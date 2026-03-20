@@ -3,9 +3,8 @@
 
 //! Vello backend for `imaging`.
 //!
-//! This crate provides a headless CPU/GPU renderer that consumes `imaging::record::Scene` (or
-//! accepts commands directly via `imaging::PaintSink`) and produces an RGBA8 image buffer using
-//! `vello` + `wgpu`.
+//! This crate provides a headless CPU/GPU renderer that consumes `imaging::record::Scene` or a
+//! native [`vello::Scene`] and produces an RGBA8 image buffer using `vello` + `wgpu`.
 //!
 //! # Render A Recorded Scene
 //!
@@ -28,32 +27,6 @@
 //!
 //!     let mut renderer = VelloRenderer::try_new(128, 128)?;
 //!     let rgba = renderer.render_scene_rgba8(&scene)?;
-//!     assert_eq!(rgba.len(), 128 * 128 * 4);
-//!     Ok(())
-//! }
-//! ```
-//!
-//! # Stream Commands Directly
-//!
-//! [`VelloRenderer`] also implements [`imaging::PaintSink`], so you can stream commands directly
-//! and then call [`VelloRenderer::finish_rgba8`].
-//!
-//! ```no_run
-//! use imaging::Painter;
-//! use imaging_vello::VelloRenderer;
-//! use kurbo::Rect;
-//! use peniko::{Brush, Color};
-//!
-//! fn main() -> Result<(), imaging_vello::Error> {
-//!     let paint = Brush::Solid(Color::from_rgb8(0xd9, 0x77, 0x06));
-//!     let mut renderer = VelloRenderer::try_new(128, 128)?;
-//!
-//!     {
-//!         let mut painter = Painter::new(&mut renderer);
-//!         painter.fill_rect(Rect::new(16.0, 16.0, 112.0, 112.0), &paint);
-//!     }
-//!
-//!     let rgba = renderer.finish_rgba8()?;
 //!     assert_eq!(rgba.len(), 128 * 128 * 4);
 //!     Ok(())
 //! }
@@ -86,6 +59,35 @@
 //! }
 //! ```
 //!
+//! # Render A Native `vello::Scene`
+//!
+//! If you already have a native Vello scene, hand it directly to [`VelloRenderer`].
+//!
+//! ```no_run
+//! use imaging::Painter;
+//! use imaging_vello::{VelloRenderer, VelloSceneSink};
+//! use kurbo::Rect;
+//! use peniko::{Brush, Color};
+//!
+//! fn main() -> Result<(), imaging_vello::Error> {
+//!     let paint = Brush::Solid(Color::from_rgb8(0xd9, 0x77, 0x06));
+//!     let mut scene = vello::Scene::new();
+//!
+//!     {
+//!         let bounds = Rect::new(0.0, 0.0, 128.0, 128.0);
+//!         let mut sink = VelloSceneSink::new(&mut scene, bounds);
+//!         let mut painter = Painter::new(&mut sink);
+//!         painter.fill_rect(bounds, &paint);
+//!         sink.finish()?;
+//!     }
+//!
+//!     let mut renderer = VelloRenderer::try_new(128, 128)?;
+//!     let rgba = renderer.render_vello_scene_rgba8(&scene)?;
+//!     assert_eq!(rgba.len(), 128 * 128 * 4);
+//!     Ok(())
+//! }
+//! ```
+//!
 //! Note: Vello uses a single layer stack for clipping and blending. Scenes that interleave clips
 //! and groups in ways Vello cannot represent may return [`Error::UnbalancedLayerStack`].
 
@@ -94,16 +96,11 @@
 
 mod scene_sink;
 
-use imaging::{
-    BlurredRoundedRect, ClipRef, Composite, FillRef, GeometryRef, GlyphRunRef, GroupRef, PaintSink,
-    StrokeRef,
-    record::{Scene, ValidateError, replay},
-};
-use kurbo::{Affine, Rect};
-use peniko::{Brush, Fill};
+use imaging::record::{Scene, ValidateError, replay};
+use kurbo::Rect;
 use std::sync::mpsc;
 use vello::wgpu;
-use vello::{AaConfig, Glyph as VelloGlyph, RenderParams};
+use vello::{AaConfig, RenderParams};
 
 pub use scene_sink::VelloSceneSink;
 
@@ -144,22 +141,15 @@ pub(crate) enum LayerKind {
 
 /// Renderer that executes `imaging` commands using `vello` + `wgpu`.
 pub struct VelloRenderer {
-    scene: vello::Scene,
     renderer: vello::Renderer,
-
     device: wgpu::Device,
     queue: wgpu::Queue,
-
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     readback: wgpu::Buffer,
     bytes_per_row: u32,
-
     width: u16,
     height: u16,
-    tolerance: f64,
-    error: Option<Error>,
-    layer_stack: Vec<LayerKind>,
 }
 
 impl core::fmt::Debug for VelloRenderer {
@@ -167,9 +157,6 @@ impl core::fmt::Debug for VelloRenderer {
         f.debug_struct("VelloRenderer")
             .field("width", &self.width)
             .field("height", &self.height)
-            .field("tolerance", &self.tolerance)
-            .field("error", &self.error)
-            .field("layer_stack_depth", &self.layer_stack.len())
             .finish_non_exhaustive()
     }
 }
@@ -193,7 +180,6 @@ impl VelloRenderer {
             .map_err(Error::Render)?;
 
         Ok(Self {
-            scene: vello::Scene::new(),
             renderer,
             device,
             queue,
@@ -203,41 +189,22 @@ impl VelloRenderer {
             bytes_per_row,
             width,
             height,
-            tolerance: 0.1,
-            error: None,
-            layer_stack: Vec::new(),
         })
-    }
-
-    /// Set the curve flattening tolerance used when converting rounded rects to paths.
-    pub fn set_tolerance(&mut self, tolerance: f64) {
-        self.tolerance = tolerance;
-    }
-
-    /// Reset the internal Vello scene and state.
-    pub fn reset(&mut self) {
-        self.scene.reset();
-        self.error = None;
-        self.layer_stack.clear();
     }
 
     /// Render a recorded scene and return an RGBA8 buffer (unpremultiplied).
     pub fn render_scene_rgba8(&mut self, scene: &Scene) -> Result<Vec<u8>, Error> {
         scene.validate().map_err(Error::InvalidScene)?;
-        self.reset();
-        replay(scene, self);
-        self.finish_rgba8()
+        let mut native = vello::Scene::new();
+        let bounds = Rect::new(0.0, 0.0, f64::from(self.width), f64::from(self.height));
+        let mut sink = VelloSceneSink::new(&mut native, bounds);
+        replay(scene, &mut sink);
+        sink.finish()?;
+        self.render_vello_scene_rgba8(&native)
     }
 
-    /// Finish rendering the current command stream and return an RGBA8 buffer (unpremultiplied).
-    pub fn finish_rgba8(&mut self) -> Result<Vec<u8>, Error> {
-        if let Some(err) = self.error.take() {
-            return Err(err);
-        }
-        if !self.layer_stack.is_empty() {
-            return Err(Error::Internal("unbalanced layer stack"));
-        }
-
+    /// Render a native [`vello::Scene`] and return an RGBA8 buffer (unpremultiplied).
+    pub fn render_vello_scene_rgba8(&mut self, scene: &vello::Scene) -> Result<Vec<u8>, Error> {
         let params = RenderParams {
             base_color: peniko::Color::from_rgba8(0, 0, 0, 0),
             width: u32::from(self.width),
@@ -249,7 +216,7 @@ impl VelloRenderer {
             .render_to_texture(
                 &self.device,
                 &self.queue,
-                &self.scene,
+                scene,
                 &self.texture_view,
                 &params,
             )
@@ -264,407 +231,6 @@ impl VelloRenderer {
             self.width,
             self.height,
         )
-    }
-
-    fn set_error_once(&mut self, err: Error) {
-        if self.error.is_none() {
-            self.error = Some(err);
-        }
-    }
-
-    fn brush_to_brush(&mut self, brush: &Brush, composite: Composite) -> Option<Brush> {
-        let brush = brush.clone().multiply_alpha(composite.alpha);
-        match brush {
-            Brush::Solid(_) | Brush::Gradient(_) | Brush::Image(_) => Some(brush),
-        }
-    }
-
-    fn surface_clip(&self) -> Rect {
-        Rect::new(0.0, 0.0, f64::from(self.width), f64::from(self.height))
-    }
-
-    fn push_layer_kind(&mut self, kind: LayerKind) {
-        self.layer_stack.push(kind);
-    }
-
-    fn pop_layer_kind(&mut self, expected: LayerKind) -> bool {
-        match self.layer_stack.pop() {
-            Some(kind) if kind == expected => true,
-            _ => {
-                self.set_error_once(Error::UnbalancedLayerStack);
-                false
-            }
-        }
-    }
-
-    fn draw_glyph_run(&mut self, glyph_run: GlyphRunRef<'_>) {
-        if glyph_run.composite.blend != peniko::BlendMode::default() {
-            self.set_error_once(Error::UnsupportedGlyphBlend);
-            return;
-        }
-
-        let Some(paint) = self.brush_to_brush(glyph_run.paint, glyph_run.composite) else {
-            return;
-        };
-
-        let builder = self
-            .scene
-            .draw_glyphs(glyph_run.font)
-            .transform(glyph_run.transform)
-            .font_size(glyph_run.font_size)
-            .hint(glyph_run.hint)
-            .normalized_coords(glyph_run.normalized_coords)
-            .brush(&paint)
-            .brush_alpha(glyph_run.composite.alpha);
-        let builder = builder.glyph_transform(glyph_run.glyph_transform);
-        let glyphs = glyph_run.glyphs.iter().map(|glyph| VelloGlyph {
-            id: glyph.id,
-            x: glyph.x,
-            y: glyph.y,
-        });
-        builder.draw(glyph_run.style, glyphs);
-    }
-
-    fn draw_blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        if draw.composite.blend != peniko::BlendMode::default() {
-            self.set_error_once(Error::UnsupportedBlurredRoundedRectBlend);
-            return;
-        }
-        self.scene.draw_blurred_rounded_rect(
-            draw.transform,
-            draw.rect,
-            draw.color.multiply_alpha(draw.composite.alpha),
-            draw.radius,
-            draw.std_dev,
-        );
-    }
-}
-
-impl PaintSink for VelloRenderer {
-    fn push_clip(&mut self, clip: ClipRef<'_>) {
-        if self.error.is_some() {
-            return;
-        }
-
-        match clip {
-            ClipRef::Fill {
-                transform,
-                shape,
-                fill_rule,
-            } => match shape {
-                GeometryRef::Rect(r) => self.scene.push_clip_layer(fill_rule, transform, &r),
-                GeometryRef::RoundedRect(rr) => {
-                    self.scene.push_clip_layer(fill_rule, transform, &rr);
-                }
-                GeometryRef::Path(p) => self.scene.push_clip_layer(fill_rule, transform, p),
-                GeometryRef::OwnedPath(p) => self.scene.push_clip_layer(fill_rule, transform, &p),
-            },
-            ClipRef::Stroke {
-                transform,
-                shape,
-                stroke,
-            } => match shape {
-                GeometryRef::Rect(r) => self.scene.push_clip_layer(stroke, transform, &r),
-                GeometryRef::RoundedRect(rr) => self.scene.push_clip_layer(stroke, transform, &rr),
-                GeometryRef::Path(p) => self.scene.push_clip_layer(stroke, transform, p),
-                GeometryRef::OwnedPath(p) => self.scene.push_clip_layer(stroke, transform, &p),
-            },
-        }
-        self.push_layer_kind(LayerKind::Clip);
-    }
-
-    fn pop_clip(&mut self) {
-        if self.error.is_some() {
-            return;
-        }
-        if !self.pop_layer_kind(LayerKind::Clip) {
-            return;
-        }
-        self.scene.pop_layer();
-    }
-
-    fn push_group(&mut self, group: GroupRef<'_>) {
-        if self.error.is_some() {
-            return;
-        }
-        if !group.filters.is_empty() {
-            self.set_error_once(Error::UnsupportedFilter);
-            return;
-        }
-
-        if let Some(clip) = group.clip {
-            match clip {
-                ClipRef::Fill {
-                    transform,
-                    shape,
-                    fill_rule,
-                } => match shape {
-                    GeometryRef::Rect(r) => self.scene.push_layer(
-                        fill_rule,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &r,
-                    ),
-                    GeometryRef::RoundedRect(rr) => self.scene.push_layer(
-                        fill_rule,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &rr,
-                    ),
-                    GeometryRef::Path(p) => self.scene.push_layer(
-                        fill_rule,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        p,
-                    ),
-                    GeometryRef::OwnedPath(p) => self.scene.push_layer(
-                        fill_rule,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &p,
-                    ),
-                },
-                ClipRef::Stroke {
-                    transform,
-                    shape,
-                    stroke,
-                } => match shape {
-                    GeometryRef::Rect(r) => self.scene.push_layer(
-                        stroke,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &r,
-                    ),
-                    GeometryRef::RoundedRect(rr) => self.scene.push_layer(
-                        stroke,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &rr,
-                    ),
-                    GeometryRef::Path(p) => self.scene.push_layer(
-                        stroke,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        p,
-                    ),
-                    GeometryRef::OwnedPath(p) => self.scene.push_layer(
-                        stroke,
-                        group.composite.blend,
-                        group.composite.alpha,
-                        transform,
-                        &p,
-                    ),
-                },
-            }
-        } else {
-            let clip_box = self.surface_clip();
-            self.scene.push_layer(
-                Fill::NonZero,
-                group.composite.blend,
-                group.composite.alpha,
-                Affine::IDENTITY,
-                &clip_box,
-            );
-        }
-        self.push_layer_kind(LayerKind::Group);
-    }
-
-    fn pop_group(&mut self) {
-        if self.error.is_some() {
-            return;
-        }
-        if !self.pop_layer_kind(LayerKind::Group) {
-            return;
-        }
-        self.scene.pop_layer();
-    }
-
-    fn fill(&mut self, draw: FillRef<'_>) {
-        if self.error.is_some() {
-            return;
-        }
-
-        let Some(paint) = self.brush_to_brush(draw.paint, draw.composite) else {
-            return;
-        };
-
-        let (blend, paint) = match (&paint, draw.composite.blend.compose) {
-            (Brush::Solid(c), peniko::Compose::Copy) if c.components[3] == 0.0 => (
-                peniko::BlendMode::new(peniko::Mix::Normal, peniko::Compose::DestOut),
-                Brush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255)),
-            ),
-            _ => (draw.composite.blend, paint),
-        };
-
-        if blend != peniko::BlendMode::default() {
-            match &draw.shape {
-                GeometryRef::Rect(r) => {
-                    self.scene
-                        .push_layer(draw.fill_rule, blend, 1.0, draw.transform, r);
-                }
-                GeometryRef::RoundedRect(rr) => {
-                    self.scene
-                        .push_layer(draw.fill_rule, blend, 1.0, draw.transform, rr);
-                }
-                GeometryRef::Path(p) => {
-                    self.scene
-                        .push_layer(draw.fill_rule, blend, 1.0, draw.transform, *p);
-                }
-                GeometryRef::OwnedPath(p) => {
-                    self.scene
-                        .push_layer(draw.fill_rule, blend, 1.0, draw.transform, p);
-                }
-            }
-            self.push_layer_kind(LayerKind::Group);
-        }
-
-        match draw.shape {
-            GeometryRef::Rect(r) => {
-                self.scene.fill(
-                    draw.fill_rule,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &r,
-                );
-            }
-            GeometryRef::RoundedRect(rr) => {
-                self.scene.fill(
-                    draw.fill_rule,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &rr,
-                );
-            }
-            GeometryRef::Path(p) => {
-                self.scene.fill(
-                    draw.fill_rule,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    p,
-                );
-            }
-            GeometryRef::OwnedPath(p) => {
-                self.scene.fill(
-                    draw.fill_rule,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &p,
-                );
-            }
-        }
-
-        if blend != peniko::BlendMode::default() {
-            if !self.pop_layer_kind(LayerKind::Group) {
-                return;
-            }
-            self.scene.pop_layer();
-        }
-    }
-
-    fn stroke(&mut self, draw: StrokeRef<'_>) {
-        if self.error.is_some() {
-            return;
-        }
-
-        let Some(paint) = self.brush_to_brush(draw.paint, draw.composite) else {
-            return;
-        };
-
-        let (blend, paint) = match (&paint, draw.composite.blend.compose) {
-            (Brush::Solid(c), peniko::Compose::Copy) if c.components[3] == 0.0 => (
-                peniko::BlendMode::new(peniko::Mix::Normal, peniko::Compose::DestOut),
-                Brush::Solid(peniko::Color::from_rgba8(0, 0, 0, 255)),
-            ),
-            _ => (draw.composite.blend, paint),
-        };
-
-        if blend != peniko::BlendMode::default() {
-            match &draw.shape {
-                GeometryRef::Rect(r) => {
-                    self.scene
-                        .push_layer(draw.stroke, blend, 1.0, draw.transform, r);
-                }
-                GeometryRef::RoundedRect(rr) => {
-                    self.scene
-                        .push_layer(draw.stroke, blend, 1.0, draw.transform, rr);
-                }
-                GeometryRef::Path(p) => {
-                    self.scene
-                        .push_layer(draw.stroke, blend, 1.0, draw.transform, *p);
-                }
-                GeometryRef::OwnedPath(p) => {
-                    self.scene
-                        .push_layer(draw.stroke, blend, 1.0, draw.transform, p);
-                }
-            }
-            self.push_layer_kind(LayerKind::Group);
-        }
-
-        match draw.shape {
-            GeometryRef::Rect(r) => {
-                self.scene.stroke(
-                    draw.stroke,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &r,
-                );
-            }
-            GeometryRef::RoundedRect(rr) => {
-                self.scene.stroke(
-                    draw.stroke,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &rr,
-                );
-            }
-            GeometryRef::Path(p) => {
-                self.scene
-                    .stroke(draw.stroke, draw.transform, &paint, draw.paint_transform, p);
-            }
-            GeometryRef::OwnedPath(p) => {
-                self.scene.stroke(
-                    draw.stroke,
-                    draw.transform,
-                    &paint,
-                    draw.paint_transform,
-                    &p,
-                );
-            }
-        }
-
-        if blend != peniko::BlendMode::default() {
-            if !self.pop_layer_kind(LayerKind::Group) {
-                return;
-            }
-            self.scene.pop_layer();
-        }
-    }
-
-    fn glyph_run(&mut self, draw: GlyphRunRef<'_>) {
-        if self.error.is_some() {
-            return;
-        }
-        self.draw_glyph_run(draw);
-    }
-
-    fn blurred_rounded_rect(&mut self, draw: BlurredRoundedRect) {
-        if self.error.is_some() {
-            return;
-        }
-        self.draw_blurred_rounded_rect(draw);
     }
 }
 
