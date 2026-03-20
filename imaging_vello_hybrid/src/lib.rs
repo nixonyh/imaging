@@ -68,6 +68,50 @@
 //!
 //! Use [`VelloHybridSceneSink::with_renderer`] instead when the scene uses image brushes.
 //!
+//! # Record Image Brushes Into `vello_hybrid::Scene`
+//!
+//! Use [`VelloHybridSceneSink::with_renderer`] when recording image brushes directly into a
+//! native [`vello_hybrid::Scene`]. The sink uploads images through the renderer and reuses them
+//! across later recordings and renders.
+//!
+//! ```no_run
+//! use std::sync::Arc;
+//!
+//! use imaging::Painter;
+//! use imaging_vello_hybrid::{VelloHybridRenderer, VelloHybridSceneSink};
+//! use kurbo::Rect;
+//! use peniko::{Blob, Brush, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
+//!
+//! fn main() -> Result<(), imaging_vello_hybrid::Error> {
+//!     let image = ImageData {
+//!         data: Blob::new(Arc::new([
+//!             0xff, 0x20, 0x20, 0xff, 0x20, 0xff, 0x20, 0xff, 0x20, 0x20, 0xff, 0xff, 0xff,
+//!             0xff, 0x20, 0xff,
+//!         ])),
+//!         format: ImageFormat::Rgba8,
+//!         alpha_type: ImageAlphaType::Alpha,
+//!         width: 2,
+//!         height: 2,
+//!     };
+//!     let brush = Brush::Image(ImageBrush::new(image));
+//!
+//!     let mut renderer = VelloHybridRenderer::try_new(128, 128)?;
+//!     let mut scene = vello_hybrid::Scene::new(128, 128);
+//!     scene.reset();
+//!
+//!     {
+//!         let mut sink = VelloHybridSceneSink::with_renderer(&mut scene, &mut renderer);
+//!         let mut painter = Painter::new(&mut sink);
+//!         painter.fill_rect(Rect::new(0.0, 0.0, 128.0, 128.0), &brush);
+//!         sink.finish()?;
+//!     }
+//!
+//!     let rgba = renderer.render_vello_hybrid_scene_rgba8(&scene)?;
+//!     assert_eq!(rgba.len(), 128 * 128 * 4);
+//!     Ok(())
+//! }
+//! ```
+//!
 //! # Render A Native `vello_hybrid::Scene`
 //!
 //! If you already have a native hybrid scene, hand it directly to [`VelloHybridRenderer`].
