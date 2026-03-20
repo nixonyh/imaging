@@ -4,10 +4,11 @@
 //! Painter-style authoring helpers built on top of [`PaintSink`].
 
 use kurbo::{Affine, Rect};
+use peniko::Brush;
 
 use crate::{
     BlurredRoundedRect, ClipRef, Composite, FillRef, GeometryRef, GlyphRunRef, GlyphStyle,
-    GroupRef, NormalizedCoord, Paint, PaintSink, StrokeRef, StrokeStyle, record::Glyph,
+    GroupRef, NormalizedCoord, PaintSink, StrokeRef, StrokeStyle, record::Glyph,
 };
 
 /// Painter-style authoring wrapper over a [`PaintSink`].
@@ -30,17 +31,17 @@ where
     pub fn fill<'b>(
         &'b mut self,
         shape: impl Into<GeometryRef<'b>>,
-        paint: &'b Paint,
+        brush: &'b Brush,
     ) -> FillBuilder<'b, S> {
         FillBuilder {
             sink: self.sink,
-            draw: FillRef::new(shape, paint),
+            draw: FillRef::new(shape, brush),
         }
     }
 
-    /// Fill a rectangle using default transform, fill rule, paint transform, and composite state.
-    pub fn fill_rect(&mut self, rect: Rect, paint: &Paint) {
-        self.sink.fill(FillRef::new(rect, paint));
+    /// Fill a rectangle using default transform, fill rule, brush transform, and composite state.
+    pub fn fill_rect(&mut self, rect: Rect, brush: &Brush) {
+        self.sink.fill(FillRef::new(rect, brush));
     }
 
     /// Start configuring a stroke draw.
@@ -48,11 +49,11 @@ where
         &'b mut self,
         shape: impl Into<GeometryRef<'b>>,
         stroke: &'b StrokeStyle,
-        paint: &'b Paint,
+        brush: &'b Brush,
     ) -> StrokeBuilder<'b, S> {
         StrokeBuilder {
             sink: self.sink,
-            draw: StrokeRef::new(shape, stroke, paint),
+            draw: StrokeRef::new(shape, stroke, brush),
         }
     }
 
@@ -60,7 +61,7 @@ where
     pub fn glyphs<'b>(
         &'b mut self,
         font: &'b peniko::FontData,
-        paint: &'b Paint,
+        brush: &'b Brush,
     ) -> GlyphRunBuilder<'b, S> {
         GlyphRunBuilder {
             sink: self.sink,
@@ -70,7 +71,7 @@ where
             font_size: 16.0,
             hint: false,
             normalized_coords: &[],
-            paint,
+            brush,
             composite: Composite::default(),
         }
     }
@@ -145,10 +146,10 @@ where
         self
     }
 
-    /// Set the optional paint-space transform.
+    /// Set the optional brush-space transform.
     #[must_use]
-    pub fn paint_transform(mut self, paint_transform: Option<Affine>) -> Self {
-        self.draw.paint_transform = paint_transform;
+    pub fn brush_transform(mut self, brush_transform: Option<Affine>) -> Self {
+        self.draw.brush_transform = brush_transform;
         self
     }
 
@@ -183,10 +184,10 @@ where
         self
     }
 
-    /// Set the optional paint-space transform.
+    /// Set the optional brush-space transform.
     #[must_use]
-    pub fn paint_transform(mut self, paint_transform: Option<Affine>) -> Self {
-        self.draw.paint_transform = paint_transform;
+    pub fn brush_transform(mut self, brush_transform: Option<Affine>) -> Self {
+        self.draw.brush_transform = brush_transform;
         self
     }
 
@@ -213,7 +214,7 @@ pub struct GlyphRunBuilder<'a, S: ?Sized> {
     font_size: f32,
     hint: bool,
     normalized_coords: &'a [NormalizedCoord],
-    paint: &'a Paint,
+    brush: &'a Brush,
     composite: Composite,
 }
 
@@ -274,7 +275,7 @@ where
             normalized_coords: self.normalized_coords,
             style,
             glyphs,
-            paint: self.paint,
+            brush: self.brush,
             composite: self.composite,
         });
     }

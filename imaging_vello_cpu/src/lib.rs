@@ -263,7 +263,7 @@ impl VelloCpuRenderer {
     }
 
     fn draw_glyph_run(&mut self, glyph_run: GlyphRunRef<'_>) {
-        let Some(paint) = self.brush_to_paint(glyph_run.paint, glyph_run.composite) else {
+        let Some(paint) = self.brush_to_paint(glyph_run.brush, glyph_run.composite) else {
             return;
         };
         self.ctx.set_transform(glyph_run.transform);
@@ -400,13 +400,13 @@ impl PaintSink for VelloCpuRenderer {
             return;
         }
 
-        let Some(paint) = self.brush_to_paint(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_paint(draw.brush, draw.composite) else {
             return;
         };
         self.ctx.set_transform(draw.transform);
         self.ctx.set_fill_rule(draw.fill_rule);
         self.ctx
-            .set_paint_transform(draw.paint_transform.unwrap_or(Affine::IDENTITY));
+            .set_paint_transform(draw.brush_transform.unwrap_or(Affine::IDENTITY));
         self.ctx.set_blend_mode(draw.composite.blend);
         self.ctx.set_paint(paint);
 
@@ -426,13 +426,13 @@ impl PaintSink for VelloCpuRenderer {
             return;
         }
 
-        let Some(paint) = self.brush_to_paint(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_paint(draw.brush, draw.composite) else {
             return;
         };
         self.ctx.set_transform(draw.transform);
         self.ctx.set_stroke(draw.stroke.clone());
         self.ctx
-            .set_paint_transform(draw.paint_transform.unwrap_or(Affine::IDENTITY));
+            .set_paint_transform(draw.brush_transform.unwrap_or(Affine::IDENTITY));
         self.ctx.set_blend_mode(draw.composite.blend);
         self.ctx.set_paint(paint);
 

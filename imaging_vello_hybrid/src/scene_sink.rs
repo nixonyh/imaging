@@ -117,7 +117,7 @@ impl<'a> VelloHybridSceneSink<'a> {
     }
 
     fn draw_glyph_run(&mut self, glyph_run: GlyphRunRef<'_>) {
-        let Some(paint) = self.brush_to_paint(glyph_run.paint, glyph_run.composite) else {
+        let Some(paint) = self.brush_to_paint(glyph_run.brush, glyph_run.composite) else {
             return;
         };
         self.scene.set_transform(glyph_run.transform);
@@ -236,13 +236,13 @@ impl PaintSink for VelloHybridSceneSink<'_> {
             return;
         }
 
-        let Some(paint) = self.brush_to_paint(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_paint(draw.brush, draw.composite) else {
             return;
         };
         self.scene.set_transform(draw.transform);
         self.scene.set_fill_rule(draw.fill_rule);
         self.scene
-            .set_paint_transform(draw.paint_transform.unwrap_or(Affine::IDENTITY));
+            .set_paint_transform(draw.brush_transform.unwrap_or(Affine::IDENTITY));
 
         let (blend, paint) = match (&paint, draw.composite.blend.compose) {
             (Brush::Solid(c), peniko::Compose::Copy) if c.components[3] == 0.0 => (
@@ -271,13 +271,13 @@ impl PaintSink for VelloHybridSceneSink<'_> {
             return;
         }
 
-        let Some(paint) = self.brush_to_paint(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_paint(draw.brush, draw.composite) else {
             return;
         };
         self.scene.set_transform(draw.transform);
         self.scene.set_stroke(draw.stroke.clone());
         self.scene
-            .set_paint_transform(draw.paint_transform.unwrap_or(Affine::IDENTITY));
+            .set_paint_transform(draw.brush_transform.unwrap_or(Affine::IDENTITY));
 
         let (blend, paint) = match (&paint, draw.composite.blend.compose) {
             (Brush::Solid(c), peniko::Compose::Copy) if c.components[3] == 0.0 => (

@@ -9,11 +9,11 @@
 use alloc::vec::Vec;
 
 use kurbo::{Affine, BezPath, Rect, RoundedRect, Shape as _};
-use peniko::FontData;
+use peniko::{Brush, FontData};
 
 use crate::{
     BlurredRoundedRect, ClipRef, Composite, FillRef, FillRule, GlyphRunRef, GlyphStyle, GroupRef,
-    NormalizedCoord, Paint, PaintSink, StrokeRef, StrokeStyle,
+    NormalizedCoord, PaintSink, StrokeRef, StrokeStyle,
 };
 
 /// A geometry payload stored in a recording.
@@ -146,8 +146,8 @@ pub struct GlyphRun {
     pub style: GlyphStyle,
     /// Positioned glyphs in the run.
     pub glyphs: Vec<Glyph>,
-    /// Paint used for the run.
-    pub paint: Paint,
+    /// Brush used for the run.
+    pub brush: Brush,
     /// Per-draw compositing.
     pub composite: Composite,
 }
@@ -165,7 +165,7 @@ impl GlyphRun {
             normalized_coords: Vec::new(),
             style: GlyphStyle::Fill(FillRule::NonZero),
             glyphs: Vec::new(),
-            paint: Paint::Solid(peniko::Color::BLACK),
+            brush: Brush::Solid(peniko::Color::BLACK),
             composite: Composite::default(),
         }
     }
@@ -183,10 +183,10 @@ pub enum Draw {
         transform: Affine,
         /// Fill rule used to determine inside/outside for paths.
         fill_rule: FillRule,
-        /// Paint used by this draw.
-        paint: Paint,
-        /// Optional paint-space transform (for gradients/images).
-        paint_transform: Option<Affine>,
+        /// Brush used by this draw.
+        brush: Brush,
+        /// Optional brush-space transform (for gradients/images).
+        brush_transform: Option<Affine>,
         /// Geometry to fill.
         shape: Geometry,
         /// Per-draw compositing.
@@ -198,10 +198,10 @@ pub enum Draw {
         transform: Affine,
         /// Stroke style.
         stroke: StrokeStyle,
-        /// Paint used by this draw.
-        paint: Paint,
-        /// Optional paint-space transform (for gradients/images).
-        paint_transform: Option<Affine>,
+        /// Brush used by this draw.
+        brush: Brush,
+        /// Optional brush-space transform (for gradients/images).
+        brush_transform: Option<Affine>,
         /// Geometry to stroke.
         shape: Geometry,
         /// Per-draw compositing.
@@ -455,8 +455,8 @@ mod tests {
         a.draw(Draw::Fill {
             transform: Affine::IDENTITY,
             fill_rule: FillRule::NonZero,
-            paint: Paint::Solid(peniko::Color::WHITE),
-            paint_transform: None,
+            brush: Brush::Solid(peniko::Color::WHITE),
+            brush_transform: None,
             shape: Geometry::Rect(Rect::new(0.0, 0.0, 1.0, 1.0)),
             composite: Composite::default(),
         });
@@ -474,7 +474,7 @@ mod tests {
                 x: 0.0,
                 y: 0.0,
             }],
-            paint: Paint::Solid(peniko::Color::BLACK),
+            brush: Brush::Solid(peniko::Color::BLACK),
             composite: Composite::default(),
         }));
         a.draw(Draw::BlurredRoundedRect(BlurredRoundedRect {

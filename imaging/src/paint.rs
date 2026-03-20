@@ -8,10 +8,10 @@
 //! semantic recording format.
 
 use kurbo::{Affine, BezPath, Rect, RoundedRect, Shape as _};
+use peniko::Brush;
 
 use crate::{
-    BlurredRoundedRect, Composite, FillRule, Filter, GlyphStyle, NormalizedCoord, Paint,
-    StrokeStyle,
+    BlurredRoundedRect, Composite, FillRule, Filter, GlyphStyle, NormalizedCoord, StrokeStyle,
     record::{
         Clip, ClipId, Command, Draw, DrawId, Geometry, Glyph, GlyphRun, Group, GroupId, Scene,
     },
@@ -241,10 +241,10 @@ pub struct FillRef<'a> {
     pub transform: Affine,
     /// Fill rule used to determine inside/outside for paths.
     pub fill_rule: FillRule,
-    /// Paint used by this draw.
-    pub paint: &'a Paint,
-    /// Optional paint-space transform (for gradients/images).
-    pub paint_transform: Option<Affine>,
+    /// Brush used by this draw.
+    pub brush: &'a Brush,
+    /// Optional brush-space transform (for gradients/images).
+    pub brush_transform: Option<Affine>,
     /// Geometry to fill.
     pub shape: GeometryRef<'a>,
     /// Per-draw compositing.
@@ -252,14 +252,14 @@ pub struct FillRef<'a> {
 }
 
 impl<'a> FillRef<'a> {
-    /// Create a fill draw with default transform, paint transform, fill rule, and composite state.
+    /// Create a fill draw with default transform, brush transform, fill rule, and composite state.
     #[must_use]
-    pub fn new(shape: impl Into<GeometryRef<'a>>, paint: &'a Paint) -> Self {
+    pub fn new(shape: impl Into<GeometryRef<'a>>, brush: &'a Brush) -> Self {
         Self {
             transform: Affine::IDENTITY,
             fill_rule: FillRule::NonZero,
-            paint,
-            paint_transform: None,
+            brush,
+            brush_transform: None,
             shape: shape.into(),
             composite: Composite::default(),
         }
@@ -279,10 +279,10 @@ impl<'a> FillRef<'a> {
         self
     }
 
-    /// Set the optional paint-space transform.
+    /// Set the optional brush-space transform.
     #[must_use]
-    pub fn paint_transform(mut self, paint_transform: Option<Affine>) -> Self {
-        self.paint_transform = paint_transform;
+    pub fn brush_transform(mut self, brush_transform: Option<Affine>) -> Self {
+        self.brush_transform = brush_transform;
         self
     }
 
@@ -299,8 +299,8 @@ impl<'a> FillRef<'a> {
         Draw::Fill {
             transform: self.transform,
             fill_rule: self.fill_rule,
-            paint: self.paint.clone(),
-            paint_transform: self.paint_transform,
+            brush: self.brush.clone(),
+            brush_transform: self.brush_transform,
             shape: self.shape.to_owned(),
             composite: self.composite,
         }
@@ -314,10 +314,10 @@ pub struct StrokeRef<'a> {
     pub transform: Affine,
     /// Stroke style.
     pub stroke: &'a StrokeStyle,
-    /// Paint used by this draw.
-    pub paint: &'a Paint,
-    /// Optional paint-space transform (for gradients/images).
-    pub paint_transform: Option<Affine>,
+    /// Brush used by this draw.
+    pub brush: &'a Brush,
+    /// Optional brush-space transform (for gradients/images).
+    pub brush_transform: Option<Affine>,
     /// Geometry to stroke.
     pub shape: GeometryRef<'a>,
     /// Per-draw compositing.
@@ -325,18 +325,18 @@ pub struct StrokeRef<'a> {
 }
 
 impl<'a> StrokeRef<'a> {
-    /// Create a stroke draw with default transform, paint transform, and composite state.
+    /// Create a stroke draw with default transform, brush transform, and composite state.
     #[must_use]
     pub fn new(
         shape: impl Into<GeometryRef<'a>>,
         stroke: &'a StrokeStyle,
-        paint: &'a Paint,
+        brush: &'a Brush,
     ) -> Self {
         Self {
             transform: Affine::IDENTITY,
             stroke,
-            paint,
-            paint_transform: None,
+            brush,
+            brush_transform: None,
             shape: shape.into(),
             composite: Composite::default(),
         }
@@ -349,10 +349,10 @@ impl<'a> StrokeRef<'a> {
         self
     }
 
-    /// Set the optional paint-space transform.
+    /// Set the optional brush-space transform.
     #[must_use]
-    pub fn paint_transform(mut self, paint_transform: Option<Affine>) -> Self {
-        self.paint_transform = paint_transform;
+    pub fn brush_transform(mut self, brush_transform: Option<Affine>) -> Self {
+        self.brush_transform = brush_transform;
         self
     }
 
@@ -369,8 +369,8 @@ impl<'a> StrokeRef<'a> {
         Draw::Stroke {
             transform: self.transform,
             stroke: self.stroke.clone(),
-            paint: self.paint.clone(),
-            paint_transform: self.paint_transform,
+            brush: self.brush.clone(),
+            brush_transform: self.brush_transform,
             shape: self.shape.to_owned(),
             composite: self.composite,
         }
@@ -396,8 +396,8 @@ pub struct GlyphRunRef<'a> {
     pub style: &'a GlyphStyle,
     /// Positioned glyphs in the run.
     pub glyphs: &'a [Glyph],
-    /// Paint used for the run.
-    pub paint: &'a Paint,
+    /// Brush used for the run.
+    pub brush: &'a Brush,
     /// Per-draw compositing.
     pub composite: Composite,
 }
@@ -409,7 +409,7 @@ impl<'a> GlyphRunRef<'a> {
         font: &'a peniko::FontData,
         style: &'a GlyphStyle,
         glyphs: &'a [Glyph],
-        paint: &'a Paint,
+        brush: &'a Brush,
     ) -> Self {
         Self {
             font,
@@ -420,7 +420,7 @@ impl<'a> GlyphRunRef<'a> {
             normalized_coords: &[],
             style,
             glyphs,
-            paint,
+            brush,
             composite: Composite::default(),
         }
     }
@@ -437,7 +437,7 @@ impl<'a> GlyphRunRef<'a> {
             normalized_coords: self.normalized_coords.to_vec(),
             style: self.style.clone(),
             glyphs: self.glyphs.to_vec(),
-            paint: self.paint.clone(),
+            brush: self.brush.clone(),
             composite: self.composite,
         }
     }
@@ -556,7 +556,7 @@ impl GlyphRun {
             normalized_coords: &self.normalized_coords,
             style: &self.style,
             glyphs: &self.glyphs,
-            paint: &self.paint,
+            brush: &self.brush,
             composite: self.composite,
         }
     }
@@ -570,30 +570,30 @@ impl Draw {
             Self::Fill {
                 transform,
                 fill_rule,
-                paint,
-                paint_transform,
+                brush,
+                brush_transform,
                 shape,
                 composite,
             } => DrawRef::Fill(FillRef {
                 transform: *transform,
                 fill_rule: *fill_rule,
-                paint,
-                paint_transform: *paint_transform,
+                brush,
+                brush_transform: *brush_transform,
                 shape: shape.as_ref(),
                 composite: *composite,
             }),
             Self::Stroke {
                 transform,
                 stroke,
-                paint,
-                paint_transform,
+                brush,
+                brush_transform,
                 shape,
                 composite,
             } => DrawRef::Stroke(StrokeRef {
                 transform: *transform,
                 stroke,
-                paint,
-                paint_transform: *paint_transform,
+                brush,
+                brush_transform: *brush_transform,
                 shape: shape.as_ref(),
                 composite: *composite,
             }),

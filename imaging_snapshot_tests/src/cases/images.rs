@@ -38,7 +38,7 @@ impl SnapshotCase for GmImageBrushes {
                 )),
                 &left,
             )
-            .paint_transform(Some(Affine::translate((-18.0, -12.0))))
+            .brush_transform(Some(Affine::translate((-18.0, -12.0))))
             .draw();
 
         let diamond_brush = Brush::Image(
@@ -57,7 +57,7 @@ impl SnapshotCase for GmImageBrushes {
                 )),
                 &diamond_brush,
             )
-            .paint_transform(Some(Affine::translate((-104.0, -8.0))))
+            .brush_transform(Some(Affine::translate((-104.0, -8.0))))
             .composite(Composite::new(BlendMode::from(Mix::Multiply), 1.0))
             .draw();
 
@@ -79,7 +79,7 @@ impl SnapshotCase for GmImageBrushes {
                 &frame_stroke,
                 &frame_brush,
             )
-            .paint_transform(Some(Affine::translate((-126.0, -120.0))))
+            .brush_transform(Some(Affine::translate((-126.0, -120.0))))
             .draw();
 
         let glaze = Brush::Solid(Color::from_rgba8(255, 255, 255, 170));

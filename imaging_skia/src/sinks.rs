@@ -146,7 +146,7 @@ fn draw_glyph_run(canvas: &sk::Canvas, state: &mut StreamState, glyph_run: Glyph
     set_matrix(canvas, glyph_run.transform);
 
     let Some(mut sk_paint) =
-        brush_to_paint(glyph_run.paint, glyph_run.composite.alpha, Affine::IDENTITY)
+        brush_to_paint(glyph_run.brush, glyph_run.composite.alpha, Affine::IDENTITY)
     else {
         state.set_error_once(Error::Internal("invalid image brush"));
         return;
@@ -272,9 +272,9 @@ fn paint_sink_fill(canvas: &sk::Canvas, state: &mut StreamState, draw: FillRef<'
 
     set_matrix(canvas, draw.transform);
     let Some(mut sk_paint) = brush_to_paint(
-        draw.paint,
+        draw.brush,
         draw.composite.alpha,
-        draw.paint_transform.unwrap_or(Affine::IDENTITY),
+        draw.brush_transform.unwrap_or(Affine::IDENTITY),
     ) else {
         state.set_error_once(Error::Internal("invalid image brush"));
         return;
@@ -318,9 +318,9 @@ fn paint_sink_stroke(canvas: &sk::Canvas, state: &mut StreamState, draw: StrokeR
 
     set_matrix(canvas, draw.transform);
     let Some(mut sk_paint) = brush_to_paint(
-        draw.paint,
+        draw.brush,
         draw.composite.alpha,
-        draw.paint_transform.unwrap_or(Affine::IDENTITY),
+        draw.brush_transform.unwrap_or(Affine::IDENTITY),
     ) else {
         state.set_error_once(Error::Internal("invalid image brush"));
         return;
@@ -575,8 +575,8 @@ impl PaintSink for SkPictureRecorderSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use imaging::{Composite, Paint};
-    use peniko::Color;
+    use imaging::Composite;
+    use peniko::{Brush, Color};
 
     #[test]
     fn sk_canvas_sink_reports_clip_underflow() {
@@ -594,7 +594,7 @@ mod tests {
         let mut sink = SkPictureRecorderSink::new(Rect::new(0.0, 0.0, 32.0, 32.0));
         sink.fill(FillRef::new(
             Rect::new(0.0, 0.0, 16.0, 16.0),
-            &Paint::Solid(Color::from_rgb8(0x11, 0x22, 0x33)),
+            &Brush::Solid(Color::from_rgb8(0x11, 0x22, 0x33)),
         ));
         let picture = sink.finish_picture().unwrap();
         let cull = picture.cull_rect();

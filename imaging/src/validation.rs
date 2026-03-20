@@ -38,10 +38,11 @@
 //! ```
 
 use crate::{
-    BlurredRoundedRect, ClipRef, Composite, FillRef, Filter, GlyphRunRef, GroupRef, Paint,
-    PaintSink, StrokeRef, StrokeStyle, record::Geometry,
+    BlurredRoundedRect, ClipRef, Composite, FillRef, Filter, GlyphRunRef, GroupRef, PaintSink,
+    StrokeRef, StrokeStyle, record::Geometry,
 };
 use kurbo::{Affine, BezPath, Rect, RoundedRect};
+use peniko::Brush;
 
 /// Decision returned by a [`ValidatingSink`] violation hook.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -76,8 +77,8 @@ pub enum ValidationError {
     InvalidStroke,
     /// A filter had invalid parameters.
     InvalidFilter,
-    /// A paint payload had invalid parameters.
-    InvalidPaint {
+    /// A brush payload had invalid parameters.
+    InvalidBrush {
         /// Short label describing what was invalid.
         what: &'static str,
     },
@@ -325,25 +326,25 @@ where
         }
     }
 
-    fn validate_paint(&mut self, paint: &Paint) -> bool {
-        match paint {
-            Paint::Solid(_) => true,
-            Paint::Gradient(gradient) => self.validate_gradient(gradient),
-            Paint::Image(image_brush) => self.validate_image_brush(image_brush),
+    fn validate_brush(&mut self, brush: &Brush) -> bool {
+        match brush {
+            Brush::Solid(_) => true,
+            Brush::Gradient(gradient) => self.validate_gradient(gradient),
+            Brush::Image(image_brush) => self.validate_image_brush(image_brush),
         }
     }
 
     fn validate_gradient(&mut self, gradient: &peniko::Gradient) -> bool {
         if gradient.stops.is_empty() {
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Gradient::stops",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Gradient::stops",
             });
         }
 
         if let Some(stop) = gradient.stops.iter().find(|stop| !stop.offset.is_finite()) {
             let _ = stop;
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Gradient::stop_offset",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Gradient::stop_offset",
             });
         }
 
@@ -352,8 +353,8 @@ where
             .windows(2)
             .all(|pair| pair[0].offset <= pair[1].offset)
         {
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Gradient::stop_order",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Gradient::stop_order",
             });
         }
 
@@ -362,8 +363,8 @@ where
             .iter()
             .all(|stop| (0.0..=1.0).contains(&stop.offset))
         {
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Gradient::stop_range",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Gradient::stop_range",
             });
         }
 
@@ -394,16 +395,16 @@ where
         if kind_ok {
             true
         } else {
-            !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Gradient::kind",
+            !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Gradient::kind",
             })
         }
     }
 
     fn validate_image_brush(&mut self, image_brush: &peniko::ImageBrush) -> bool {
         if !(image_brush.sampler.alpha.is_finite() && image_brush.sampler.alpha >= 0.0) {
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Image::alpha",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Image::alpha",
             });
         }
 
@@ -413,8 +414,8 @@ where
             .size_in_bytes(image.width, image.height)
             .is_none_or(|expected| expected != image.data.len())
         {
-            return !self.violate(ValidationError::InvalidPaint {
-                what: "Paint::Image::data_len",
+            return !self.violate(ValidationError::InvalidBrush {
+                what: "Brush::Image::data_len",
             });
         }
 
@@ -433,7 +434,7 @@ where
             })
             && font_size_ok
             && glyphs_ok
-            && self.validate_paint(glyph_run.paint)
+            && self.validate_brush(glyph_run.brush)
             && match glyph_run.style {
                 peniko::Style::Fill(_) => true,
                 peniko::Style::Stroke(stroke) => self.validate_stroke(stroke),
@@ -566,11 +567,11 @@ where
         }
 
         let ok = self.validate_affine("Draw::Fill::transform", &draw.transform)
-            && self.validate_paint(draw.paint)
+            && self.validate_brush(draw.brush)
             && draw
-                .paint_transform
+                .brush_transform
                 .as_ref()
-                .is_none_or(|xf| self.validate_affine("Draw::Fill::paint_transform", xf))
+                .is_none_or(|xf| self.validate_affine("Draw::Fill::brush_transform", xf))
             && self.validate_geometry(&draw.shape.clone().to_owned())
             && self.validate_composite(&draw.composite);
         if !ok {
@@ -586,11 +587,11 @@ where
         }
 
         let ok = self.validate_affine("Draw::Stroke::transform", &draw.transform)
-            && self.validate_paint(draw.paint)
+            && self.validate_brush(draw.brush)
             && draw
-                .paint_transform
+                .brush_transform
                 .as_ref()
-                .is_none_or(|xf| self.validate_affine("Draw::Stroke::paint_transform", xf))
+                .is_none_or(|xf| self.validate_affine("Draw::Stroke::brush_transform", xf))
             && self.validate_stroke(draw.stroke)
             && self.validate_geometry(&draw.shape.clone().to_owned())
             && self.validate_composite(&draw.composite);
@@ -626,7 +627,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ClipRef, Composite, FillRef, FillRule, GlyphRunRef, Paint,
+        ClipRef, Composite, FillRef, FillRule, GlyphRunRef,
         record::{Geometry, Glyph, Scene},
     };
     use alloc::sync::Arc;
@@ -640,7 +641,7 @@ mod tests {
     fn validating_sink_records_nan_and_aborts_by_default() {
         let inner = Scene::new();
         let mut sink = ValidatingSink::new(inner);
-        let paint = Paint::default();
+        let paint = Brush::default();
         sink.fill(
             FillRef::new(Geometry::Rect(Rect::new(0.0, 0.0, 1.0, 1.0)), &paint)
                 .transform(Affine::translate((f64::NAN, 0.0))),
@@ -656,7 +657,7 @@ mod tests {
     fn validating_sink_hook_can_continue() {
         let inner = Scene::new();
         let mut sink = ValidatingSink::with_hook(inner, |_err| ValidationDecision::Continue);
-        let paint = Paint::default();
+        let paint = Brush::default();
         sink.fill(
             FillRef::new(Geometry::Rect(Rect::new(0.0, 0.0, 1.0, 1.0)), &paint)
                 .transform(Affine::translate((f64::NAN, 0.0))),
@@ -691,7 +692,7 @@ mod tests {
             x: 0.0,
             y: f32::NAN,
         }];
-        let paint = Paint::Solid(Color::BLACK);
+        let paint = Brush::Solid(Color::BLACK);
         sink.glyph_run(GlyphRunRef {
             font: &font,
             transform: Affine::IDENTITY,
@@ -701,7 +702,7 @@ mod tests {
             normalized_coords: &[],
             style: &style,
             glyphs: &glyphs,
-            paint: &paint,
+            brush: &paint,
             composite: Composite::default(),
         });
         assert_eq!(
@@ -746,8 +747,8 @@ mod tests {
         ));
         assert_eq!(
             sink.first_error(),
-            Some(&ValidationError::InvalidPaint {
-                what: "Paint::Gradient::stop_order",
+            Some(&ValidationError::InvalidBrush {
+                what: "Brush::Gradient::stop_order",
             })
         );
     }
@@ -769,8 +770,8 @@ mod tests {
         ));
         assert_eq!(
             sink.first_error(),
-            Some(&ValidationError::InvalidPaint {
-                what: "Paint::Image::data_len",
+            Some(&ValidationError::InvalidBrush {
+                what: "Brush::Image::data_len",
             })
         );
     }

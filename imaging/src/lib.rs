@@ -103,7 +103,7 @@
 extern crate alloc;
 
 use kurbo::{Affine, Rect, Stroke};
-use peniko::{BlendMode, Brush, Fill, Style};
+use peniko::{BlendMode, Fill, Style};
 
 mod paint;
 mod painter;
@@ -120,11 +120,6 @@ pub type FillRule = Fill;
 
 /// Stroke style used by strokes and stroke-style clips.
 pub type StrokeStyle = Stroke;
-
-/// Brush/paint used for fills and strokes.
-///
-/// This is currently a direct re-export of Peniko's brush type.
-pub type Paint = Brush;
 
 /// Glyph drawing style used by [`record::GlyphRun`].
 pub type GlyphStyle = Style;

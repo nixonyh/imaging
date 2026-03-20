@@ -90,7 +90,7 @@ impl<'a> VelloSceneSink<'a> {
             return;
         }
 
-        let Some(paint) = self.brush_to_brush(glyph_run.paint, glyph_run.composite) else {
+        let Some(paint) = self.brush_to_brush(glyph_run.brush, glyph_run.composite) else {
             return;
         };
 
@@ -277,7 +277,7 @@ impl PaintSink for VelloSceneSink<'_> {
             return;
         }
 
-        let Some(paint) = self.brush_to_brush(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_brush(draw.brush, draw.composite) else {
             return;
         };
 
@@ -317,7 +317,7 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.fill_rule,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &r,
                 );
             }
@@ -326,7 +326,7 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.fill_rule,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &rr,
                 );
             }
@@ -335,7 +335,7 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.fill_rule,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     p,
                 );
             }
@@ -344,7 +344,7 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.fill_rule,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &p,
                 );
             }
@@ -363,7 +363,7 @@ impl PaintSink for VelloSceneSink<'_> {
             return;
         }
 
-        let Some(paint) = self.brush_to_brush(draw.paint, draw.composite) else {
+        let Some(paint) = self.brush_to_brush(draw.brush, draw.composite) else {
             return;
         };
 
@@ -403,7 +403,7 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.stroke,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &r,
                 );
             }
@@ -412,20 +412,20 @@ impl PaintSink for VelloSceneSink<'_> {
                     draw.stroke,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &rr,
                 );
             }
             GeometryRef::Path(p) => {
                 self.scene
-                    .stroke(draw.stroke, draw.transform, &paint, draw.paint_transform, p);
+                    .stroke(draw.stroke, draw.transform, &paint, draw.brush_transform, p);
             }
             GeometryRef::OwnedPath(p) => {
                 self.scene.stroke(
                     draw.stroke,
                     draw.transform,
                     &paint,
-                    draw.paint_transform,
+                    draw.brush_transform,
                     &p,
                 );
             }
