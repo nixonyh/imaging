@@ -1,12 +1,12 @@
 // Copyright 2026 the Imaging Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use imaging::{ClipRef, Composite, PaintSink, Painter, record::Geometry};
-use kurbo::RoundedRect;
+use imaging::{ClipRef, Composite, PaintSink, Painter};
+use kurbo::{Circle, RoundedRect};
 use peniko::{BlendMode, Brush, Color, Compose, Extend, Gradient};
 
 use super::SnapshotCase;
-use super::util::{background, circle_geometry, f32p};
+use super::util::{background, f32p};
 
 fn linear_rainbow(start: (f32, f32), end: (f32, f32)) -> Brush {
     let stops = [
@@ -58,14 +58,13 @@ impl SnapshotCase for GmGradientsLinear {
 
         let band = RoundedRect::new(24.0, 32.0, width - 24.0, height - 32.0, 28.0);
         let g = linear_rainbow((20.0, 20.0), (f32p(width - 20.0), f32p(height - 20.0)));
-        painter.fill(Geometry::RoundedRect(band), &g).draw();
+        painter.fill(band, &g).draw();
 
         // Punch a transparent hole using a nontrivial compose mode (Copy).
-        let clear = Brush::Solid(Color::TRANSPARENT);
         painter
             .fill(
-                circle_geometry((width * 0.5, height * 0.5), width.min(height) * 0.14, 0.1),
-                &clear,
+                Circle::new((width * 0.5, height * 0.5), width.min(height) * 0.14),
+                Color::TRANSPARENT,
             )
             .composite(Composite::new(BlendMode::from(Compose::Copy), 1.0))
             .draw();
@@ -83,13 +82,13 @@ impl SnapshotCase for GmGradientsSweep {
         let mut painter = Painter::new(sink);
 
         painter.with_clip(
-            ClipRef::fill(Geometry::RoundedRect(RoundedRect::new(
+            ClipRef::fill(RoundedRect::new(
                 16.0,
                 16.0,
                 width - 16.0,
                 height - 16.0,
                 24.0,
-            ))),
+            )),
             |painter| {
                 let sweep = sweep_rainbow(
                     (f32p(width * 0.5), f32p(height * 0.5)),
@@ -98,7 +97,7 @@ impl SnapshotCase for GmGradientsSweep {
                 );
                 painter
                     .fill(
-                        circle_geometry((width * 0.5, height * 0.5), width.min(height) * 0.35, 0.1),
+                        Circle::new((width * 0.5, height * 0.5), width.min(height) * 0.35),
                         &sweep,
                     )
                     .draw();
@@ -139,13 +138,7 @@ impl SnapshotCase for GmGradientsTwoPointRadial {
         );
         painter
             .fill(
-                Geometry::RoundedRect(RoundedRect::new(
-                    24.0,
-                    24.0,
-                    width - 24.0,
-                    height - 24.0,
-                    30.0,
-                )),
+                RoundedRect::new(24.0, 24.0, width - 24.0, height - 24.0, 30.0),
                 &g,
             )
             .draw();

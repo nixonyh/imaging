@@ -1,7 +1,7 @@
 // Copyright 2026 the Imaging Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use imaging::{PaintSink, Painter, record::Geometry};
+use imaging::{PaintSink, Painter};
 use kurbo::{Affine, BezPath, Cap, Join, Point, Stroke};
 use peniko::{Brush, Color};
 
@@ -45,21 +45,15 @@ impl SnapshotCase for GmStrokes {
 
             let stroke_paint = Brush::Solid(Color::from_rgb8(20, 80, 200));
             painter
-                .stroke(Geometry::Path(path.clone()), &stroke, &stroke_paint)
+                .stroke(path.clone(), &stroke, &stroke_paint)
                 .transform(transform)
                 .draw();
 
             // Underlay to show caps clearly.
-            let underlay = Brush::Solid(Color::from_rgba8(0, 0, 0, 18));
             painter
                 .fill(
-                    Geometry::Rect(kurbo::Rect::new(
-                        width * 0.1,
-                        height * 0.78,
-                        width * 0.8,
-                        height * 0.82,
-                    )),
-                    &underlay,
+                    kurbo::Rect::new(width * 0.1, height * 0.78, width * 0.8, height * 0.82),
+                    Color::from_rgba8(0, 0, 0, 18),
                 )
                 .transform(transform)
                 .draw();
