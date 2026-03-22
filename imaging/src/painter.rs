@@ -6,7 +6,7 @@
 use core::borrow::Borrow;
 
 use kurbo::{Affine, Rect, Stroke};
-use peniko::{BrushRef, Style};
+use peniko::{BrushRef, ImageBrushRef, Style};
 
 use crate::{
     BlurredRoundedRect, ClipRef, Composite, FillRef, GeometryRef, GlyphRunRef, GroupRef,
@@ -83,6 +83,18 @@ where
         self.sink.blurred_rounded_rect(draw);
     }
 
+    /// Draw an image at its natural size with the given transform.
+    pub fn draw_image<'b>(&'b mut self, image: impl Into<ImageBrushRef<'b>>, transform: Affine) {
+        let image = image.into();
+        let rect = Rect::new(
+            0.0,
+            0.0,
+            image.image.width as f64,
+            image.image.height as f64,
+        );
+        self.fill(rect, image).transform(transform).draw();
+    }
+
     /// Push a clip, run the provided closure, then pop the clip.
     pub fn with_clip(&mut self, clip: ClipRef<'_>, f: impl FnOnce(&mut Painter<'_, S>)) {
         self.sink.push_clip(clip);
@@ -149,6 +161,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::sync::Arc;
     use alloc::vec;
     use alloc::vec::Vec;
     use kurbo::{Point, Shape as _, Vec2};
@@ -231,6 +244,34 @@ mod tests {
                 transform: Affine::translate((2.0, 3.0)),
                 shape: GeometryRef::Rect(Rect::new(0.0, 0.0, 5.0, 6.0)),
                 fill_rule: Fill::NonZero,
+            }
+        );
+    }
+
+    #[test]
+    fn draw_image_uses_natural_size_rect() {
+        let mut scene = crate::record::Scene::new();
+        let mut painter = Painter::new(&mut scene);
+        let image = peniko::ImageData {
+            data: peniko::Blob::new(Arc::new([0_u8; 16])),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+            width: 2,
+            height: 2,
+        };
+        let transform = Affine::translate((8.0, 9.0));
+
+        painter.draw_image(&image, transform);
+
+        assert_eq!(
+            scene.draw_op(crate::record::DrawId(0)),
+            &crate::record::Draw::Fill {
+                transform,
+                fill_rule: Fill::NonZero,
+                brush: peniko::Brush::Image(peniko::ImageBrush::new(image)),
+                brush_transform: None,
+                shape: crate::record::Geometry::Rect(Rect::new(0.0, 0.0, 2.0, 2.0)),
+                composite: Composite::default(),
             }
         );
     }
