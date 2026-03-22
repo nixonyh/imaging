@@ -102,6 +102,17 @@ where
         self.with_clip(ClipRef::fill(shape), f);
     }
 
+    /// Push a fill-style clip with an explicit transform, run the provided closure, then pop the
+    /// clip.
+    pub fn with_fill_clip_transformed<'b>(
+        &'b mut self,
+        shape: impl Into<GeometryRef<'b>>,
+        transform: Affine,
+        f: impl FnOnce(&mut Painter<'_, S>),
+    ) {
+        self.with_clip(ClipRef::fill(shape).with_transform(transform), f);
+    }
+
     /// Push a stroke-style clip, run the provided closure, then pop the clip.
     pub fn with_stroke_clip<'b>(
         &'b mut self,
@@ -112,6 +123,18 @@ where
         self.with_clip(ClipRef::stroke(shape, stroke), f);
     }
 
+    /// Push a stroke-style clip with an explicit transform, run the provided closure, then pop the
+    /// clip.
+    pub fn with_stroke_clip_transformed<'b>(
+        &'b mut self,
+        shape: impl Into<GeometryRef<'b>>,
+        stroke: &'b Stroke,
+        transform: Affine,
+        f: impl FnOnce(&mut Painter<'_, S>),
+    ) {
+        self.with_clip(ClipRef::stroke(shape, stroke).with_transform(transform), f);
+    }
+
     /// Push an isolated group, run the provided closure, then pop the group.
     pub fn with_group(&mut self, group: GroupRef<'_>, f: impl FnOnce(&mut Painter<'_, S>)) {
         self.sink.push_group(group);
@@ -120,6 +143,96 @@ where
             f(&mut painter);
         }
         self.sink.pop_group();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
+    use kurbo::{Point, Shape as _, Vec2};
+    use peniko::Fill;
+
+    use crate::{BlurredRoundedRect, GroupRef};
+
+    #[derive(Default)]
+    struct RecordingSink {
+        pushed_clips: Vec<crate::record::Clip>,
+    }
+
+    impl PaintSink for RecordingSink {
+        fn push_clip(&mut self, clip: ClipRef<'_>) {
+            self.pushed_clips.push(clip.to_owned());
+        }
+
+        fn pop_clip(&mut self) {}
+
+        fn push_group(&mut self, _group: GroupRef<'_>) {}
+
+        fn pop_group(&mut self) {}
+
+        fn fill(&mut self, _draw: FillRef<'_>) {}
+
+        fn stroke(&mut self, _draw: StrokeRef<'_>) {}
+
+        fn glyph_run(&mut self, _draw: GlyphRunRef<'_>, _glyphs: &mut dyn Iterator<Item = Glyph>) {}
+
+        fn blurred_rounded_rect(&mut self, _draw: BlurredRoundedRect) {}
+    }
+
+    #[test]
+    fn transformed_fill_clip_preserves_explicit_transform() {
+        let mut sink = RecordingSink::default();
+        let mut painter = Painter::new(&mut sink);
+        let transform = Affine::translate((4.0, 7.0));
+
+        painter.with_fill_clip_transformed(Rect::new(0.0, 0.0, 10.0, 12.0), transform, |_| {});
+
+        assert_eq!(
+            sink.pushed_clips,
+            vec![crate::record::Clip::Fill {
+                transform,
+                shape: crate::record::Geometry::Rect(Rect::new(0.0, 0.0, 10.0, 12.0)),
+                fill_rule: Fill::NonZero,
+            }]
+        );
+    }
+
+    #[test]
+    fn transformed_stroke_clip_preserves_explicit_transform() {
+        let mut sink = RecordingSink::default();
+        let mut painter = Painter::new(&mut sink);
+        let transform = Affine::translate((4.0, 7.0));
+        let stroke = Stroke::new(3.0).with_caps(kurbo::Cap::Round);
+        let line = kurbo::Line::new(Point::new(1.0, 2.0), Point::new(11.0, 15.0));
+        let path = line.to_path(0.1);
+
+        painter.with_stroke_clip_transformed(path.clone(), &stroke, transform, |_| {});
+
+        assert_eq!(
+            sink.pushed_clips,
+            vec![crate::record::Clip::Stroke {
+                transform,
+                shape: crate::record::Geometry::Path(path),
+                stroke,
+            }]
+        );
+    }
+
+    #[test]
+    fn clip_ref_with_transform_replaces_shape_transform() {
+        let clip = ClipRef::fill(Rect::new(0.0, 0.0, 5.0, 6.0))
+            .with_transform(Affine::translate(Vec2::new(2.0, 3.0)));
+
+        assert_eq!(
+            clip,
+            ClipRef::Fill {
+                transform: Affine::translate((2.0, 3.0)),
+                shape: GeometryRef::Rect(Rect::new(0.0, 0.0, 5.0, 6.0)),
+                fill_rule: Fill::NonZero,
+            }
+        );
     }
 }
 

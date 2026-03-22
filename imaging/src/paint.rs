@@ -148,6 +148,25 @@ impl<'a> ClipRef<'a> {
         }
     }
 
+    /// Set the transform applied to the clip shape.
+    #[must_use]
+    pub fn with_transform(self, transform: Affine) -> Self {
+        match self {
+            Self::Fill {
+                shape, fill_rule, ..
+            } => Self::Fill {
+                transform,
+                shape,
+                fill_rule,
+            },
+            Self::Stroke { shape, stroke, .. } => Self::Stroke {
+                transform,
+                shape,
+                stroke,
+            },
+        }
+    }
+
     /// Convert a borrowed clip payload into an owned [`Clip`].
     #[must_use]
     pub fn to_owned(self) -> Clip {
