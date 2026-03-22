@@ -115,7 +115,7 @@ pub mod validation;
 pub use paint::{
     ClipRef, DrawRef, FillRef, GeometryRef, GlyphRunRef, GroupRef, PaintSink, StrokeRef,
 };
-pub use painter::{FillBuilder, GlyphRunBuilder, Painter, StrokeBuilder};
+pub use painter::{FillBuilder, GlyphRunBuilder, PaintShape, Painter, StrokeBuilder};
 
 /// Normalized variable-font coordinate value.
 pub type NormalizedCoord = i16;

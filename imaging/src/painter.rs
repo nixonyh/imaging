@@ -5,13 +5,89 @@
 
 use core::borrow::Borrow;
 
-use kurbo::{Affine, Rect, Stroke};
+use kurbo::{Affine, BezPath, CubicBez, Line, QuadBez, Rect, RoundedRect, Stroke};
 use peniko::{BrushRef, ImageBrushRef, Style};
 
 use crate::{
     BlurredRoundedRect, ClipRef, Composite, FillRef, GeometryRef, GlyphRunRef, GroupRef,
     NormalizedCoord, PaintSink, StrokeRef, record::Glyph,
 };
+
+const DEFAULT_SHAPE_TOLERANCE: f64 = 0.1;
+
+/// Shape accepted by [`Painter`] fill and stroke entry points.
+///
+/// Cheap retained geometry like [`Rect`], [`RoundedRect`], and [`BezPath`] stays in its native
+/// representation. Other supported Kurbo shapes are flattened into a path using a default
+/// tolerance of `0.1`.
+pub trait PaintShape<'a> {
+    /// Convert this shape into borrowed imaging geometry.
+    #[must_use]
+    fn into_geometry_ref(self) -> GeometryRef<'a>;
+}
+
+impl<'a> PaintShape<'a> for GeometryRef<'a> {
+    fn into_geometry_ref(self) -> Self {
+        self
+    }
+}
+
+impl<'a> PaintShape<'a> for Rect {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+impl<'a> PaintShape<'a> for RoundedRect {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+impl<'a> PaintShape<'a> for &'a BezPath {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+impl<'a> PaintShape<'a> for BezPath {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+impl<'a> PaintShape<'a> for crate::record::Geometry {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+impl<'a> PaintShape<'a> for &'a crate::record::Geometry {
+    fn into_geometry_ref(self) -> GeometryRef<'a> {
+        self.into()
+    }
+}
+
+macro_rules! impl_path_shape {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl<'a> PaintShape<'a> for $ty {
+                fn into_geometry_ref(self) -> GeometryRef<'a> {
+                    GeometryRef::OwnedPath(kurbo::Shape::to_path(&self, DEFAULT_SHAPE_TOLERANCE))
+                }
+            }
+        )*
+    };
+}
+
+impl_path_shape!(
+    kurbo::Arc,
+    kurbo::Circle,
+    CubicBez,
+    kurbo::Ellipse,
+    Line,
+    QuadBez,
+);
 
 /// Painter-style authoring wrapper over a [`PaintSink`].
 #[derive(Debug)]
@@ -32,12 +108,12 @@ where
     /// Start configuring a fill draw.
     pub fn fill<'b>(
         &'b mut self,
-        shape: impl Into<GeometryRef<'b>>,
+        shape: impl PaintShape<'b>,
         brush: impl Into<BrushRef<'b>>,
     ) -> FillBuilder<'b, S> {
         FillBuilder {
             sink: self.sink,
-            draw: FillRef::new(shape, brush),
+            draw: FillRef::new(shape.into_geometry_ref(), brush),
         }
     }
 
@@ -49,13 +125,13 @@ where
     /// Start configuring a stroke draw.
     pub fn stroke<'b>(
         &'b mut self,
-        shape: impl Into<GeometryRef<'b>>,
+        shape: impl PaintShape<'b>,
         stroke: &'b Stroke,
         brush: impl Into<BrushRef<'b>>,
     ) -> StrokeBuilder<'b, S> {
         StrokeBuilder {
             sink: self.sink,
-            draw: StrokeRef::new(shape, stroke, brush),
+            draw: StrokeRef::new(shape.into_geometry_ref(), stroke, brush),
         }
     }
 
@@ -164,7 +240,7 @@ mod tests {
     use alloc::sync::Arc;
     use alloc::vec;
     use alloc::vec::Vec;
-    use kurbo::{Point, Shape as _, Vec2};
+    use kurbo::{Circle, Point, Shape as _, Vec2};
     use peniko::Fill;
 
     use crate::{BlurredRoundedRect, GroupRef};
@@ -218,7 +294,7 @@ mod tests {
         let mut painter = Painter::new(&mut sink);
         let transform = Affine::translate((4.0, 7.0));
         let stroke = Stroke::new(3.0).with_caps(kurbo::Cap::Round);
-        let line = kurbo::Line::new(Point::new(1.0, 2.0), Point::new(11.0, 15.0));
+        let line = Line::new(Point::new(1.0, 2.0), Point::new(11.0, 15.0));
         let path = line.to_path(0.1);
 
         painter.with_stroke_clip_transformed(path.clone(), &stroke, transform, |_| {});
@@ -274,6 +350,24 @@ mod tests {
                 composite: Composite::default(),
             }
         );
+    }
+
+    #[test]
+    fn fill_accepts_circle_shape_directly() {
+        let mut scene = crate::record::Scene::new();
+        let mut painter = Painter::new(&mut scene);
+
+        painter
+            .fill(Circle::new((5.0, 5.0), 3.0), peniko::Color::BLACK)
+            .draw();
+
+        match scene.draw_op(crate::record::DrawId(0)) {
+            crate::record::Draw::Fill {
+                shape: crate::record::Geometry::Path(_),
+                ..
+            } => {}
+            other => panic!("expected path-backed fill draw, got {other:?}"),
+        }
     }
 }
 
