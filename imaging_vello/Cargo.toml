@@ -14,7 +14,7 @@ imaging = { path = "../imaging", features = ["std"] }
 kurbo = { workspace = true, default-features = true }
 peniko = { workspace = true, default-features = true }
 pollster = "0.4.0"
-vello = { version = "0.7.0", default-features = true }
+vello = { version = "0.8.0", default-features = true }
 
 [lints]
 workspace = true
