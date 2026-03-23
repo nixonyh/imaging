@@ -377,11 +377,6 @@ impl<'a> FillRef<'a> {
     pub(crate) fn prepend_transform(self, prefix: Affine) -> Self {
         Self {
             transform: prefix * self.transform,
-            brush_transform: if prefix == Affine::IDENTITY {
-                self.brush_transform
-            } else {
-                Some(prefix * self.brush_transform.unwrap_or(Affine::IDENTITY))
-            },
             ..self
         }
     }
@@ -465,11 +460,6 @@ impl<'a> StrokeRef<'a> {
     pub(crate) fn prepend_transform(self, prefix: Affine) -> Self {
         Self {
             transform: prefix * self.transform,
-            brush_transform: if prefix == Affine::IDENTITY {
-                self.brush_transform
-            } else {
-                Some(prefix * self.brush_transform.unwrap_or(Affine::IDENTITY))
-            },
             ..self
         }
     }
@@ -866,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn fill_ref_prepend_transform_prefixes_draw_and_brush_transform() {
+    fn fill_ref_prepend_transform_prefixes_draw_transform_only() {
         let draw = FillRef::new(
             Rect::new(0.0, 0.0, 3.0, 4.0),
             Brush::Solid(peniko::Color::WHITE),
@@ -880,7 +870,7 @@ mod tests {
                 transform: Affine::translate((6.0, 8.0)),
                 fill_rule: Fill::NonZero,
                 brush: BrushRef::Solid(peniko::Color::WHITE),
-                brush_transform: Some(Affine::translate((8.0, 10.0))),
+                brush_transform: Some(Affine::translate((3.0, 4.0))),
                 shape: GeometryRef::Rect(Rect::new(0.0, 0.0, 3.0, 4.0)),
                 composite: Composite::default(),
             }
@@ -888,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn fill_ref_prepend_transform_injects_identity_brush_transform_when_needed() {
+    fn fill_ref_prepend_transform_preserves_missing_brush_transform() {
         let draw = FillRef::new(
             Rect::new(0.0, 0.0, 3.0, 4.0),
             Brush::Solid(peniko::Color::WHITE),
@@ -897,7 +887,7 @@ mod tests {
         assert_eq!(
             draw.prepend_transform(Affine::translate((5.0, 6.0)))
                 .brush_transform,
-            Some(Affine::translate((5.0, 6.0)))
+            None
         );
     }
 
@@ -1013,7 +1003,7 @@ mod tests {
                 transform: transform * Affine::translate((9.0, 10.0)),
                 fill_rule: Fill::NonZero,
                 brush: Brush::Solid(peniko::Color::WHITE),
-                brush_transform: Some(transform * Affine::translate((11.0, 12.0))),
+                brush_transform: Some(Affine::translate((11.0, 12.0))),
                 shape: Geometry::Rect(Rect::new(0.0, 0.0, 13.0, 14.0)),
                 composite: Composite::default(),
             }
@@ -1024,7 +1014,7 @@ mod tests {
                 transform: transform * Affine::translate((15.0, 16.0)),
                 stroke: Stroke::new(3.0),
                 brush: Brush::Solid(peniko::Color::BLACK),
-                brush_transform: Some(transform),
+                brush_transform: None,
                 shape: Geometry::Rect(Rect::new(0.0, 0.0, 17.0, 18.0)),
                 composite: Composite::default(),
             }

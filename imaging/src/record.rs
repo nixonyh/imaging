@@ -386,7 +386,7 @@ impl Scene {
     /// Append another retained scene with an extra transform applied to its commands.
     ///
     /// The extra transform prefixes clip transforms, draw transforms, group clip transforms, and
-    /// brush transforms (treating a missing brush transform as identity).
+    /// Existing brush transforms are preserved as-is.
     pub fn append_transformed(&mut self, other: &Self, transform: Affine) {
         self.reserve_like(other);
         replay_transformed(other, self, transform);
@@ -446,7 +446,7 @@ where
 /// Replay a recorded [`Scene`] into a [`crate::PaintSink`] with an extra transform.
 ///
 /// The extra transform prefixes clip transforms, draw transforms, group clip transforms, and
-/// brush transforms (treating a missing brush transform as identity).
+/// Existing brush transforms are preserved as-is.
 pub fn replay_transformed<S>(scene: &Scene, sink: &mut S, transform: Affine)
 where
     S: PaintSink + ?Sized,
@@ -568,7 +568,7 @@ mod tests {
                 transform: Affine::translate((6.0, 8.0)),
                 fill_rule: Fill::NonZero,
                 brush: Brush::Solid(peniko::Color::WHITE),
-                brush_transform: Some(Affine::translate((5.0, 6.0))),
+                brush_transform: None,
                 shape: Geometry::Rect(Rect::new(0.0, 0.0, 3.0, 4.0)),
                 composite: Composite::default(),
             }
