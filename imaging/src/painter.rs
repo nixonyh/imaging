@@ -235,14 +235,80 @@ where
         self.fill(rect, image).transform(transform).draw();
     }
 
+    /// Push a clip onto the non-isolated clip stack.
+    ///
+    /// This must be matched by a later [`Self::pop_clip`]. Prefer [`Self::with_clip`] when the
+    /// clipped work fits naturally in a closure.
+    pub fn push_clip(&mut self, clip: ClipRef<'_>) {
+        self.sink.push_clip(clip);
+    }
+
+    /// Pop the most recently pushed non-isolated clip.
+    ///
+    /// Every [`Self::push_clip`] or `push_*_clip` call must be paired with exactly one
+    /// `pop_clip`.
+    pub fn pop_clip(&mut self) {
+        self.sink.pop_clip();
+    }
+
+    /// Push a fill-style clip onto the non-isolated clip stack.
+    ///
+    /// Defaults:
+    /// - clip transform: [`Affine::IDENTITY`]
+    /// - fill rule: [`peniko::Fill::NonZero`]
+    ///
+    /// This must be matched by a later [`Self::pop_clip`]. Prefer [`Self::with_fill_clip`] when
+    /// possible.
+    pub fn push_fill_clip<'b>(&mut self, shape: impl Into<GeometryRef<'b>>) {
+        self.push_clip(ClipRef::fill(shape));
+    }
+
+    /// Push a fill-style clip with an explicit transform onto the non-isolated clip stack.
+    ///
+    /// The clip still uses [`peniko::Fill::NonZero`] unless replaced through [`ClipRef`].
+    ///
+    /// This must be matched by a later [`Self::pop_clip`]. Prefer
+    /// [`Self::with_fill_clip_transformed`] when possible.
+    pub fn push_fill_clip_transformed<'b>(
+        &mut self,
+        shape: impl Into<GeometryRef<'b>>,
+        transform: Affine,
+    ) {
+        self.push_clip(ClipRef::fill(shape).with_transform(transform));
+    }
+
+    /// Push a stroke-style clip onto the non-isolated clip stack.
+    ///
+    /// Default:
+    /// - clip transform: [`Affine::IDENTITY`]
+    ///
+    /// This must be matched by a later [`Self::pop_clip`]. Prefer [`Self::with_stroke_clip`]
+    /// when possible.
+    pub fn push_stroke_clip<'b>(&mut self, shape: impl Into<GeometryRef<'b>>, stroke: &'b Stroke) {
+        self.push_clip(ClipRef::stroke(shape, stroke));
+    }
+
+    /// Push a stroke-style clip with an explicit transform onto the non-isolated clip stack.
+    ///
+    /// This must be matched by a later [`Self::pop_clip`]. Prefer
+    /// [`Self::with_stroke_clip_transformed`] when possible.
+    pub fn push_stroke_clip_transformed<'b>(
+        &mut self,
+        shape: impl Into<GeometryRef<'b>>,
+        stroke: &'b Stroke,
+        transform: Affine,
+    ) {
+        self.push_clip(ClipRef::stroke(shape, stroke).with_transform(transform));
+    }
+
     /// Push a clip, run the provided closure, then pop the clip.
     pub fn with_clip(&mut self, clip: ClipRef<'_>, f: impl FnOnce(&mut Painter<'_, S>)) {
-        self.sink.push_clip(clip);
+        self.push_clip(clip);
         {
             let mut painter = Painter::new(self.sink);
             f(&mut painter);
         }
-        self.sink.pop_clip();
+        self.pop_clip();
     }
 
     /// Push a fill-style clip, run the provided closure, then pop the clip.
@@ -255,7 +321,12 @@ where
         shape: impl Into<GeometryRef<'b>>,
         f: impl FnOnce(&mut Painter<'_, S>),
     ) {
-        self.with_clip(ClipRef::fill(shape), f);
+        self.push_fill_clip(shape);
+        {
+            let mut painter = Painter::new(self.sink);
+            f(&mut painter);
+        }
+        self.pop_clip();
     }
 
     /// Push a fill-style clip with an explicit transform, run the provided closure, then pop the
@@ -268,7 +339,12 @@ where
         transform: Affine,
         f: impl FnOnce(&mut Painter<'_, S>),
     ) {
-        self.with_clip(ClipRef::fill(shape).with_transform(transform), f);
+        self.push_fill_clip_transformed(shape, transform);
+        {
+            let mut painter = Painter::new(self.sink);
+            f(&mut painter);
+        }
+        self.pop_clip();
     }
 
     /// Push a stroke-style clip, run the provided closure, then pop the clip.
@@ -281,7 +357,12 @@ where
         stroke: &'b Stroke,
         f: impl FnOnce(&mut Painter<'_, S>),
     ) {
-        self.with_clip(ClipRef::stroke(shape, stroke), f);
+        self.push_stroke_clip(shape, stroke);
+        {
+            let mut painter = Painter::new(self.sink);
+            f(&mut painter);
+        }
+        self.pop_clip();
     }
 
     /// Push a stroke-style clip with an explicit transform, run the provided closure, then pop the
@@ -293,17 +374,37 @@ where
         transform: Affine,
         f: impl FnOnce(&mut Painter<'_, S>),
     ) {
-        self.with_clip(ClipRef::stroke(shape, stroke).with_transform(transform), f);
-    }
-
-    /// Push an isolated group, run the provided closure, then pop the group.
-    pub fn with_group(&mut self, group: GroupRef<'_>, f: impl FnOnce(&mut Painter<'_, S>)) {
-        self.sink.push_group(group);
+        self.push_stroke_clip_transformed(shape, stroke, transform);
         {
             let mut painter = Painter::new(self.sink);
             f(&mut painter);
         }
+        self.pop_clip();
+    }
+
+    /// Push an isolated group onto the group stack.
+    ///
+    /// This must be matched by a later [`Self::pop_group`]. Prefer [`Self::with_group`] when the
+    /// grouped work fits naturally in a closure.
+    pub fn push_group(&mut self, group: GroupRef<'_>) {
+        self.sink.push_group(group);
+    }
+
+    /// Pop the most recently pushed isolated group.
+    ///
+    /// Every [`Self::push_group`] call must be paired with exactly one `pop_group`.
+    pub fn pop_group(&mut self) {
         self.sink.pop_group();
+    }
+
+    /// Push an isolated group, run the provided closure, then pop the group.
+    pub fn with_group(&mut self, group: GroupRef<'_>, f: impl FnOnce(&mut Painter<'_, S>)) {
+        self.push_group(group);
+        {
+            let mut painter = Painter::new(self.sink);
+            f(&mut painter);
+        }
+        self.pop_group();
     }
 }
 
@@ -354,7 +455,8 @@ mod tests {
         let mut painter = Painter::new(&mut sink);
         let transform = Affine::translate((4.0, 7.0));
 
-        painter.with_fill_clip_transformed(Rect::new(0.0, 0.0, 10.0, 12.0), transform, |_| {});
+        painter.push_fill_clip_transformed(Rect::new(0.0, 0.0, 10.0, 12.0), transform);
+        painter.pop_clip();
 
         assert_eq!(
             sink.pushed_clips,
@@ -375,7 +477,8 @@ mod tests {
         let line = Line::new(Point::new(1.0, 2.0), Point::new(11.0, 15.0));
         let path = line.to_path(0.1);
 
-        painter.with_stroke_clip_transformed(path.clone(), &stroke, transform, |_| {});
+        painter.push_stroke_clip_transformed(path.clone(), &stroke, transform);
+        painter.pop_clip();
 
         assert_eq!(
             sink.pushed_clips,
@@ -499,6 +602,16 @@ mod tests {
             GeometryRef::OwnedPath(_) => {}
             other => panic!("expected path-backed borrowed line shape, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn with_fill_clip_still_pushes_and_pops() {
+        let mut sink = RecordingSink::default();
+        let mut painter = Painter::new(&mut sink);
+
+        painter.with_fill_clip(Rect::new(0.0, 0.0, 5.0, 6.0), |_| {});
+
+        assert_eq!(sink.pushed_clips.len(), 1);
     }
 }
 
