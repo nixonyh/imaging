@@ -10,9 +10,9 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-imaging = { path = "../imaging", features = ["std"] }
-kurbo = { workspace = true, default-features = true }
-peniko = { workspace = true, default-features = true }
+imaging = { features = ["std"], workspace = true }
+kurbo = { default-features = true, workspace = true }
+peniko = { default-features = true, workspace = true }
 skia-safe = { version = "0.90.0" }
 
 [lints]

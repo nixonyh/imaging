@@ -10,16 +10,16 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-imaging = { path = "../imaging", features = ["std"] }
-kurbo = { workspace = true, default-features = true }
-peniko = { workspace = true, default-features = true }
+imaging = { features = ["std"], workspace = true }
+kurbo = { default-features = true, workspace = true }
+peniko = { default-features = true, workspace = true }
 pollster = "0.4.0"
-wgpu = { version = "27.0.1", default-features = false, features = [
-  "std",
-  "wgsl",
-] }
-vello_hybrid = { version = "0.0.6", default-features = true }
-vello_common = { version = "0.0.6", default-features = true }
+vello_common = { default-features = true, version = "0.0.6" }
+vello_hybrid = { default-features = true, version = "0.0.6" }
+wgpu = { default-features = false, features = [
+    "std",
+    "wgsl",
+], version = "27.0.1" }
 
 [lints]
 workspace = true

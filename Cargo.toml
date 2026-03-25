@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-  "imaging",
-  "imaging_conformance",
-  "imaging_skia",
-  "imaging_snapshot_tests",
-  "imaging_vello",
-  "imaging_vello_cpu",
-  "imaging_vello_hybrid",
-  "imaging_wind_tunnel",
+    "imaging",
+    "imaging_conformance",
+    "imaging_skia",
+    "imaging_snapshot_tests",
+    "imaging_vello",
+    "imaging_vello_cpu",
+    "imaging_vello_hybrid",
+    "imaging_wind_tunnel",
 ]
 
 [workspace.package]
@@ -21,15 +21,21 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/forest-rs/imaging"
 
 [workspace.dependencies]
-kurbo = { version = "0.13", default-features = false }
-peniko = { version = "0.6", default-features = false }
+imaging = { path = "imaging" }
+imaging_skia = { path = "imaging_skia" }
+imaging_vello = { path = "imaging_vello" }
+imaging_vello_cpu = { path = "imaging_vello_cpu" }
+imaging_vello_hybrid = { path = "imaging_vello_hybrid" }
+
+kurbo = { default-features = false, version = "0.13" }
+peniko = { default-features = false, version = "0.6" }
 
 [workspace.lints]
 # LINEBENDER LINT SET - Cargo.toml - v7
-rust.unsafe_code = "deny"
 rust.keyword_idents_2024 = "forbid"
 rust.non_ascii_idents = "forbid"
 rust.non_local_definitions = "forbid"
+rust.unsafe_code = "deny"
 rust.unsafe_op_in_unsafe_fn = "forbid"
 
 rust.elided_lifetimes_in_paths = "warn"
@@ -48,9 +54,9 @@ clippy.too_many_arguments = "allow"
 clippy.allow_attributes_without_reason = "warn"
 clippy.cast_possible_truncation = "warn"
 clippy.collection_is_never_read = "warn"
-clippy.default_trait_access = "warn"
 clippy.dbg_macro = "warn"
 clippy.debug_assert_with_mut_call = "warn"
+clippy.default_trait_access = "warn"
 clippy.doc_markdown = "warn"
 clippy.fn_to_numeric_cast_any = "warn"
 clippy.infinite_loop = "warn"

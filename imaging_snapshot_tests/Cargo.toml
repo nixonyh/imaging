@@ -10,15 +10,15 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-imaging = { workspace = true, features = ["std"] }
-imaging_skia = { workspace = true, optional = true }
-imaging_vello = { workspace = true, optional = true }
-imaging_vello_cpu = { workspace = true, optional = true }
-imaging_vello_hybrid = { workspace = true, optional = true }
-kurbo = { workspace = true, default-features = true }
-peniko = { workspace = true, default-features = true }
+imaging = { features = ["std"], workspace = true }
+imaging_skia = { optional = true, workspace = true }
+imaging_vello = { optional = true, workspace = true }
+imaging_vello_cpu = { optional = true, workspace = true }
+imaging_vello_hybrid = { optional = true, workspace = true }
+kurbo = { default-features = true, workspace = true }
+peniko = { default-features = true, workspace = true }
 skrifa = "0.40.0"
-vello_hybrid = { version = "0.0.6", default-features = true, optional = true }
+vello_hybrid = { default-features = true, optional = true, version = "0.0.6" }
 
 [lints]
 workspace = true
